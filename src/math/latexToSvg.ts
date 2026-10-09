@@ -25,17 +25,28 @@ export interface RenderedMath {
   /** Size in px at the requested font size. */
   width: number;
   height: number;
+  /**
+   * Baseline offset in px (negative = the formula dips below the text baseline), for
+   * placing the SVG inline in running text. Only set when rendered with `inline: true`.
+   */
+  verticalAlign?: number;
 }
 
-/**
- * Renders LaTeX into a standalone SVG string.
- * `pixelScale` enlarges the intrinsic SVG size so it stays sharp when zooming the board.
- */
+export interface LatexToSvgOptions {
+  fontSize: number;
+  color: string;
+  /** Enlarges the intrinsic SVG size so it stays sharp when zooming the board. */
+  pixelScale?: number;
+  /** Text-style math (small operators, no centring) for use inside a paragraph. */
+  inline?: boolean;
+}
+
+/** Renders LaTeX into a standalone SVG string. */
 export function latexToSvg(
   latex: string,
-  { fontSize, color, pixelScale = 1 }: { fontSize: number; color: string; pixelScale?: number },
+  { fontSize, color, pixelScale = 1, inline = false }: LatexToSvgOptions,
 ): RenderedMath {
-  const node = doc.convert(latex, { display: true, em: fontSize, ex: fontSize * EX_RATIO });
+  const node = doc.convert(latex, { display: !inline, em: fontSize, ex: fontSize * EX_RATIO });
   let svg = adaptor.innerHTML(node);
 
   const exPx = fontSize * EX_RATIO;
@@ -43,6 +54,8 @@ export function latexToSvg(
   const heightEx = parseFloat(/height="([\d.]+)ex"/.exec(svg)?.[1] ?? "0");
   const width = Math.max(1, widthEx * exPx);
   const height = Math.max(1, heightEx * exPx);
+  // MathJax emits e.g. style="vertical-align: -0.57ex" so the SVG sits on the text baseline.
+  const alignEx = parseFloat(/vertical-align:\s*(-?[\d.]+)ex/.exec(svg)?.[1] ?? "0");
 
   svg = svg
     .replace(/width="[\d.]+ex"/, `width="${(width * pixelScale).toFixed(2)}"`)
@@ -50,7 +63,7 @@ export function latexToSvg(
     .replace(/style="vertical-align:[^"]*"/, "")
     .replace(/currentColor/g, color);
 
-  return { svg, width, height };
+  return inline ? { svg, width, height, verticalAlign: alignEx * exPx } : { svg, width, height };
 }
 
 export function svgToDataURL(svg: string): string {

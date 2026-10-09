@@ -26,6 +26,19 @@ describe("latexToSvg", () => {
     }
   });
 
+  it("renders inline math with a baseline offset", () => {
+    const display = latexToSvg("\\frac{1}{x}", { fontSize: 20, color: "#000" });
+    const inline = latexToSvg("\\frac{1}{x}", { fontSize: 20, color: "#000", inline: true });
+    expect(display.verticalAlign).toBeUndefined();
+    expect(inline.verticalAlign).toBeTypeOf("number");
+    expect(inline.verticalAlign!).toBeLessThan(0); // a fraction dips below the baseline
+    expect(inline.svg).not.toContain("vertical-align");
+    // text-style sums are drawn with small limits, so inline output is shorter
+    const sumD = latexToSvg("\\sum_{k=1}^{n} k", { fontSize: 20, color: "#000" });
+    const sumI = latexToSvg("\\sum_{k=1}^{n} k", { fontSize: 20, color: "#000", inline: true });
+    expect(sumI.height).toBeLessThan(sumD.height);
+  });
+
   it("throws on invalid LaTeX", () => {
     expect(() => latexToSvg("\\frac{1}", { fontSize: 20, color: "#000" })).toThrow();
   });

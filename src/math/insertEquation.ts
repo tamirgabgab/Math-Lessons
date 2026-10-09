@@ -10,7 +10,7 @@ import type {
   FileId,
 } from "@excalidraw/excalidraw/element/types";
 import { latexToSvg, svgToDataURL } from "./latexToSvg";
-import { ensureVisible, placementCenter, singleSelected } from "../board/sceneUtils";
+import { ensureVisible, placeNewItem } from "../board/sceneUtils";
 
 export interface MathData {
   kind: "math";
@@ -42,24 +42,6 @@ function renderToFile(latex: string, fontSize: number, color: string) {
     created: Date.now(),
   };
   return { rendered, file };
-}
-
-/**
- * When one element is selected (typically the previous step of a solution), the new
- * equation goes on the "next line" under it — unless that spot is under a graph.
- */
-function nextLinePosition(api: ExcalidrawImperativeAPI, width: number, height: number) {
-  const prev = singleSelected(api);
-  if (!prev || prev.type === "embeddable") return null;
-  const pos = { x: prev.x, y: prev.y + prev.height + 18 };
-  const underGraph = api
-    .getSceneElements()
-    .some(
-      (g) =>
-        g.type === "embeddable" &&
-        pos.x < g.x + g.width && g.x < pos.x + width && pos.y < g.y + g.height && g.y < pos.y + height,
-    );
-  return underGraph ? null : pos;
 }
 
 /** Adds a new equation (under the selected element, or mid-screen), or re-renders an existing one. */
@@ -97,10 +79,7 @@ export function upsertEquation(
     return;
   }
 
-  const pos = nextLinePosition(api, rendered.width, rendered.height) ?? (() => {
-    const center = placementCenter(api, rendered.width, rendered.height);
-    return { x: center.x - rendered.width / 2, y: center.y - rendered.height / 2 };
-  })();
+  const pos = placeNewItem(api, rendered.width, rendered.height, { align: "left" });
   const [el] = convertToExcalidrawElements([
     {
       type: "image",

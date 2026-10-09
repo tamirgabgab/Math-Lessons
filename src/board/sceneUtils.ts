@@ -88,3 +88,48 @@ export function singleSelected(api: ExcalidrawImperativeAPI): ExcalidrawElement 
   if (ids.length !== 1) return null;
   return api.getSceneElements().find((el) => el.id === ids[0]) ?? null;
 }
+
+export interface PlaceOptions {
+  /** Which edge of the new item lines up with the selected element. Default "left". */
+  align?: "left" | "right";
+  /** Vertical gap below the selected element, in scene px. Default 18. */
+  gap?: number;
+}
+
+/**
+ * Top-left corner for a new item on the "next line": directly under the single selected
+ * element (typically the previous step of a solution), aligned to its left or right edge.
+ * Returns null when nothing (or more than one thing) is selected, when the selection is
+ * a graph, or when that spot would be hidden under a graph.
+ */
+export function nextLinePosition(
+  api: ExcalidrawImperativeAPI,
+  width: number,
+  height: number,
+  { align = "left", gap = 18 }: PlaceOptions = {},
+): { x: number; y: number } | null {
+  const prev = singleSelected(api);
+  if (!prev || prev.type === "embeddable") return null;
+  const x = align === "right" ? prev.x + prev.width - width : prev.x;
+  const pos = { x, y: prev.y + prev.height + gap };
+  const box: Box = { x: pos.x, y: pos.y, width, height };
+  const underGraph = api.getSceneElements().some((g) => g.type === "embeddable" && overlaps(box, g));
+  return underGraph ? null : pos;
+}
+
+/**
+ * Top-left corner for a new item: the next line under the selected element when that
+ * makes sense (see `nextLinePosition`), otherwise the middle of the screen (see
+ * `placementCenter`).
+ */
+export function placeNewItem(
+  api: ExcalidrawImperativeAPI,
+  width: number,
+  height: number,
+  opts: PlaceOptions = {},
+): { x: number; y: number } {
+  const next = nextLinePosition(api, width, height, opts);
+  if (next) return next;
+  const center = placementCenter(api, width, height);
+  return { x: center.x - width / 2, y: center.y - height / 2 };
+}
