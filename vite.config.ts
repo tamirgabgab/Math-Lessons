@@ -49,5 +49,7 @@ export default defineConfig({
   server: { port: 5173, strictPort: true },
   test: {
     environment: "node",
+    // agent worktrees under .claude/ hold a second copy of the repo
+    exclude: ["**/node_modules/**", "**/dist/**", ".claude/**"],
   },
 });

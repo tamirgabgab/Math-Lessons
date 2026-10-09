@@ -1,6 +1,8 @@
 import Dexie, { type Table } from "dexie";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
+import type { Snippet } from "../library/types";
+import { BUILTIN_SNIPPETS } from "../library/content";
 
 export interface PageView {
   scrollX: number;
@@ -38,12 +40,20 @@ export interface BoardContent {
 class LessonsDB extends Dexie {
   boards!: Table<BoardMeta, string>;
   contents!: Table<BoardContent, string>;
+  /** The user's own library snippets (built-in ones live in code). */
+  snippets!: Table<Snippet, string>;
 
   constructor() {
     super("math-lessons");
     this.version(1).stores({
       boards: "id, updatedAt",
       contents: "id",
+    });
+    // Dexie upgrades in place; no data migration is needed for a new table.
+    this.version(2).stores({
+      boards: "id, updatedAt",
+      contents: "id",
+      snippets: "id, topic, updatedAt",
     });
   }
 }
@@ -179,36 +189,77 @@ function pruneUnusedFiles(content: BoardContent): BinaryFiles {
   return files;
 }
 
+// ---------- library snippets ----------
+
+/** The user's own snippets, newest first. */
+export async function listSnippets(): Promise<Snippet[]> {
+  return db.snippets.orderBy("updatedAt").reverse().toArray();
+}
+
+/** Built-in snippets followed by the user's. */
+export async function allSnippets(): Promise<Snippet[]> {
+  return [...BUILTIN_SNIPPETS, ...(await listSnippets())];
+}
+
+export async function addSnippet(
+  fields: Pick<Snippet, "topic" | "title" | "kind" | "body"> & Partial<Pick<Snippet, "subtopic" | "fontSize" | "color">>,
+): Promise<Snippet> {
+  const now = Date.now();
+  const snippet: Snippet = {
+    ...fields,
+    id: newId(),
+    title: fields.title.trim() || "קטע ללא שם",
+    subtopic: fields.subtopic?.trim() || undefined,
+    builtin: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.snippets.add(snippet);
+  return snippet;
+}
+
+export async function deleteSnippet(id: string) {
+  await db.snippets.delete(id);
+}
+
 // ---------- backup ----------
 
 interface BackupFile {
   app: "math-lessons";
-  version: 1;
+  /** 1 = boards only; 2 = also the user's library snippets. */
+  version: 1 | 2;
   exportedAt: number;
   boards: BoardMeta[];
   contents: BoardContent[];
+  snippets?: Snippet[];
 }
 
 export async function exportBackup(): Promise<Blob> {
   const backup: BackupFile = {
     app: "math-lessons",
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
     boards: await db.boards.toArray(),
     contents: await db.contents.toArray(),
+    snippets: await db.snippets.toArray(),
   };
   return new Blob([JSON.stringify(backup)], { type: "application/json" });
 }
 
-/** Restores boards from a backup file; existing boards with the same id are overwritten. */
-export async function importBackup(text: string): Promise<number> {
+/**
+ * Restores boards (and, from version 2 files, library snippets); existing records with
+ * the same id are overwritten.
+ */
+export async function importBackup(text: string): Promise<{ boards: number; snippets: number }> {
   const data = JSON.parse(text) as BackupFile;
   if (data.app !== "math-lessons" || !Array.isArray(data.boards) || !Array.isArray(data.contents)) {
     throw new Error("הקובץ אינו קובץ גיבוי של לוח השיעורים");
   }
-  await db.transaction("rw", db.boards, db.contents, async () => {
+  const snippets = Array.isArray(data.snippets) ? data.snippets.filter((s) => s && !s.builtin) : [];
+  await db.transaction("rw", db.boards, db.contents, db.snippets, async () => {
     await db.boards.bulkPut(data.boards);
     await db.contents.bulkPut(data.contents);
+    await db.snippets.bulkPut(snippets);
   });
-  return data.boards.length;
+  return { boards: data.boards.length, snippets: snippets.length };
 }

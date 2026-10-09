@@ -34,7 +34,11 @@ import { elementAtClientPoint, singleSelected } from "./sceneUtils";
 import { EquationDialog, type EquationValue } from "../math/EquationDialog";
 import { getMathData, isMathElement, upsertEquation } from "../math/insertEquation";
 import { ParagraphDialog } from "../para/ParagraphDialog";
-import { getParaData, isParaElement, upsertParagraph, type ParagraphValue } from "../para/insertParagraph";
+import { getParaData, isParaElement, upsertParagraph, PARA_DEFAULT_FONT_SIZE, PARA_DEFAULT_WIDTH, type ParagraphValue } from "../para/insertParagraph";
+import { LibraryPanel } from "../library/LibraryPanel";
+import { SaveSnippetDialog, type SnippetDraft } from "../library/SaveSnippetDialog";
+import type { Snippet } from "../library/types";
+import { COLORS } from "../math/EquationDialog";
 import {
   getGraphData,
   insertGraph,
@@ -45,6 +49,7 @@ import {
 } from "../graph/graphs";
 import { GraphFocus } from "../graph/GraphFocus";
 import { GraphMenu } from "./GraphMenu";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 import { ProbabilityDialog } from "../probability/ProbabilityDialog";
 import { insertDiagram } from "../probability/materialize";
 import type { Skeleton } from "../probability/shapes";
@@ -113,9 +118,13 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
   apiRef.current = api;
 
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [eqDialog, setEqDialog] = useState<null | { existing?: ExcalidrawImageElement }>(null);
-  const [paraDialog, setParaDialog] = useState<null | { existing?: ExcalidrawImageElement }>(null);
+  // `existing` = the element being edited; `initial` = content to start from (library snippet)
+  const [eqDialog, setEqDialog] = useState<null | { existing?: ExcalidrawImageElement; initial?: EquationValue }>(null);
+  const [paraDialog, setParaDialog] = useState<null | { existing?: ExcalidrawImageElement; initial?: ParagraphValue }>(null);
   const [probDialog, setProbDialog] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [snippetDraft, setSnippetDraft] = useState<SnippetDraft | null>(null);
   const [selectedEditable, setSelectedEditable] = useState<{ id: string; kind: EditableKind } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -321,6 +330,39 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     if (isEditableElement(el)) openEditorFor(el);
   };
 
+  // ---------- library ----------
+  const snippetToParagraph = (s: Snippet): ParagraphValue => ({
+    source: s.body,
+    fontSize: s.fontSize ?? PARA_DEFAULT_FONT_SIZE,
+    color: s.color ?? COLORS[0],
+    width: PARA_DEFAULT_WIDTH,
+  });
+  const snippetToEquation = (s: Snippet): EquationValue => ({ latex: s.body, fontSize: s.fontSize ?? 28, color: s.color ?? COLORS[0] });
+
+  const insertSnippet = (s: Snippet) => {
+    if (api) {
+      if (s.kind === "para") upsertParagraph(api, snippetToParagraph(s));
+      else upsertEquation(api, snippetToEquation(s));
+    }
+    setLibraryOpen(false);
+  };
+
+  const openSnippetInEditor = (s: Snippet) => {
+    setLibraryOpen(false);
+    if (s.kind === "para") setParaDialog({ initial: snippetToParagraph(s) });
+    else setEqDialog({ initial: snippetToEquation(s) });
+  };
+
+  /** "☆ שמור כקטע": the selected paragraph/equation becomes a library snippet. */
+  const saveSelectedAsSnippet = () => {
+    if (!api) return;
+    const el = singleSelected(api);
+    const math = getMathData(el);
+    const para = getParaData(el);
+    if (math) setSnippetDraft({ kind: "math", body: math.latex, fontSize: math.fontSize, color: math.color });
+    else if (para) setSnippetDraft({ kind: "para", body: para.source, fontSize: para.fontSize, color: para.color });
+  };
+
   const activateHighlighter = () => {
     if (!api) return;
     if (!highlighterPrevRef.current) {
@@ -367,7 +409,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
   // keyboard shortcuts
   useEffect(() => {
-    const dialogOpen = eqDialog || paraDialog || probDialog || focusGraph;
+    const dialogOpen = eqDialog || paraDialog || probDialog || focusGraph || libraryOpen || snippetDraft || shortcutsOpen;
     const onKey = (e: KeyboardEvent) => {
       if (dialogOpen || isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
       const api = apiRef.current;
@@ -387,6 +429,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       } else if (e.altKey && (k === "p" || e.code === "KeyP")) {
         e.preventDefault();
         setProbDialog(true);
+      } else if (e.altKey && (k === "l" || e.code === "KeyL")) {
+        e.preventDefault();
+        setLibraryOpen(true);
       } else if (e.altKey && (k === "t" || e.code === "KeyT")) {
         // Alt+T = paragraph (plain T stays Excalidraw's text tool)
         e.preventDefault();
@@ -410,7 +455,15 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     // Enter on a selected equation/paragraph edits it (Excalidraw would start cropping the
     // image), so this one is caught in the capture phase, before Excalidraw sees it.
     const onEnterCapture = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || dialogOpen || isTypingTarget(e.target)) return;
+      if (dialogOpen || isTypingTarget(e.target)) return;
+      if (e.key === "?" || e.key === "F1") {
+        // "?" also opens Excalidraw's own help dialog, so it is swallowed here first
+        e.preventDefault();
+        e.stopPropagation();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (e.key !== "Enter") return;
       const api = apiRef.current;
       const el = api && singleSelected(api);
       if (!isEditableElement(el)) return;
@@ -425,7 +478,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       window.removeEventListener("keydown", onEnterCapture, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eqDialog, paraDialog, probDialog, focusGraph, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
+  }, [eqDialog, paraDialog, probDialog, focusGraph, libraryOpen, snippetDraft, shortcutsOpen, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
 
   // ---------- presentation mode ----------
   const togglePresenting = async () => {
@@ -542,6 +595,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
               <span className="tool-icon serif">¶</span> <span className="tool-label">פסקה</span>
             </button>
             <GraphMenu onPick={addGraph} />
+            <button className="tool-btn main" onClick={() => setLibraryOpen(true)} title="ספריית הגדרות, משפטים ותבניות לפי קורס (Alt+L)">
+              <span className="tool-icon">📚</span> <span className="tool-label">ספרייה</span>
+            </button>
             <button className="tool-btn main" onClick={() => setProbDialog(true)} title="עץ הסתברויות, דיאגרמת ון וטבלה דו-ממדית (Alt+P)">
               <span className="tool-icon">🎲</span> <span className="tool-label">הסתברות</span>
             </button>
@@ -565,6 +621,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
                 >
                   ✎ <span className="tool-label secondary">{selectedEditable.kind === "math" ? "ערוך משוואה" : "ערוך פסקה"}</span>
                 </button>
+                <button className="tool-btn" onClick={saveSelectedAsSnippet} title="שמירת הקטע המסומן בספרייה, לשימוש חוזר בשיעורים אחרים">
+                  ☆ <span className="tool-label secondary">שמור כקטע</span>
+                </button>
               </>
             )}
           </div>
@@ -581,6 +640,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
             </button>
             <button className="btn primary" onClick={togglePresenting} title="מצב הצגה לשיתוף מסך">
               ⛶ מצב הצגה
+            </button>
+            <button className="icon-btn" onClick={() => setShortcutsOpen(true)} title="קיצורי מקלדת (? או F1)" aria-label="קיצורי מקלדת">
+              ⌨
             </button>
           </div>
         </header>
@@ -629,6 +691,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
                   <WelcomeScreen.Center.MenuItem onSelect={() => addGraph("3d")} shortcut="Alt+3" icon={<span className="welcome-icon">🧊</span>}>
                     גרף תלת-ממדי Desmos
                   </WelcomeScreen.Center.MenuItem>
+                  <WelcomeScreen.Center.MenuItem onSelect={() => setLibraryOpen(true)} shortcut="Alt+L" icon={<span className="welcome-icon">📚</span>}>
+                    הגדרה או משפט מהספרייה
+                  </WelcomeScreen.Center.MenuItem>
                   <WelcomeScreen.Center.MenuItem onSelect={() => setProbDialog(true)} shortcut="Alt+P" icon={<span className="welcome-icon">🎲</span>}>
                     עץ הסתברויות, דיאגרמת ון וטבלה
                   </WelcomeScreen.Center.MenuItem>
@@ -655,6 +720,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
           <span className="divider" />
           <button className="icon-btn" onClick={() => openEquationEditor()} title="משוואה (M)">∑</button>
           <button className="icon-btn" onClick={() => openParagraphEditor()} title="פסקה (Alt+T)">¶</button>
+          <button className="icon-btn" onClick={() => setLibraryOpen(true)} title="ספרייה (Alt+L)">📚</button>
           <button className="icon-btn" onClick={() => setProbDialog(true)} title="הסתברות (Alt+P)">🎲</button>
           <button className="icon-btn" onClick={activateHighlighter} title="מרקר (U)">🖍️</button>
           <button className="icon-btn" onClick={activateLaser} title="לייזר (K)">🔴</button>
@@ -675,7 +741,8 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
       {eqDialog && (
         <EquationDialog
-          initial={eqDialog.existing ? (getMathData(eqDialog.existing) ?? undefined) : undefined}
+          initial={eqDialog.initial ?? (eqDialog.existing ? (getMathData(eqDialog.existing) ?? undefined) : undefined)}
+          isEdit={!!eqDialog.existing}
           onSubmit={onEquationSubmit}
           onCancel={() => setEqDialog(null)}
         />
@@ -683,9 +750,25 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
       {paraDialog && (
         <ParagraphDialog
-          initial={paraDialog.existing ? (getParaData(paraDialog.existing) ?? undefined) : undefined}
+          initial={paraDialog.initial ?? (paraDialog.existing ? (getParaData(paraDialog.existing) ?? undefined) : undefined)}
+          isEdit={!!paraDialog.existing}
           onSubmit={onParagraphSubmit}
           onCancel={() => setParaDialog(null)}
+        />
+      )}
+
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+
+      {libraryOpen && <LibraryPanel onInsert={insertSnippet} onOpenInEditor={openSnippetInEditor} onCancel={() => setLibraryOpen(false)} />}
+
+      {snippetDraft && (
+        <SaveSnippetDialog
+          draft={snippetDraft}
+          onSaved={(s) => {
+            setSnippetDraft(null);
+            window.alert(`"${s.title}" נשמר בספרייה (📚).`);
+          }}
+          onCancel={() => setSnippetDraft(null)}
         />
       )}
     </div>

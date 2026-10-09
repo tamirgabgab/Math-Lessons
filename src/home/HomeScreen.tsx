@@ -161,7 +161,8 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   const onRestore = async (file: File) => {
     try {
       const count = await importBackup(await file.text());
-      window.alert(`שוחזרו ${count} שיעורים ותבניות מהגיבוי.`);
+      const extra = count.snippets ? ` ו-${count.snippets} קטעים מהספרייה` : "";
+      window.alert(`שוחזרו ${count.boards} שיעורים ותבניות${extra} מהגיבוי.`);
       await refresh();
     } catch (e) {
       window.alert(`שחזור נכשל: ${(e as Error).message}`);

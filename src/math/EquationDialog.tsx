@@ -260,10 +260,13 @@ function cleanLatex(mf: MathfieldElement): string {
 
 export function EquationDialog({
   initial,
+  isEdit = initial !== undefined,
   onSubmit,
   onCancel,
 }: {
   initial?: EquationValue;
+  /** True when an element on the board is being edited (false for a library snippet). */
+  isEdit?: boolean;
   /** `asNew` adds a separate equation even when an existing one is being edited. */
   onSubmit: (value: EquationValue, asNew?: boolean) => void;
   onCancel: () => void;
@@ -398,7 +401,7 @@ export function EquationDialog({
     <div className="modal-backdrop eq-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="modal eq-dialog" role="dialog" aria-label="עורך משוואות">
         <div className="modal-header">
-          <h2>{initial ? "עריכת משוואה" : "משוואה חדשה"}</h2>
+          <h2>{isEdit ? "עריכת משוואה" : "משוואה חדשה"}</h2>
           <button className="icon-btn" onClick={onCancel} aria-label="סגור">✕</button>
         </div>
 
@@ -511,7 +514,7 @@ export function EquationDialog({
         <div className="modal-footer">
           <span className="hint">Enter להוספה (בתיבת הקוד: Ctrl+Enter) · Esc לביטול</span>
           <button className="btn" onClick={onCancel}>ביטול</button>
-          <button className="btn primary" onClick={submit}>{initial ? "עדכן" : "הוסף ללוח"}</button>
+          <button className="btn primary" onClick={submit}>{isEdit ? "עדכן" : "הוסף ללוח"}</button>
         </div>
       </div>
     </div>

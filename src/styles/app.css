@@ -157,8 +157,8 @@ button, input, select { font: inherit; color: inherit; }
   height: 52px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
-.topbar-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.topbar-group.tools { gap: 2px; }
+.topbar-group { display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; }
+.topbar-group.tools { gap: 2px; flex: 0 1 auto; overflow: hidden; }
 .title-input {
   border: 1px solid transparent; border-radius: 6px; padding: 5px 8px; font-weight: 500; font-size: 16px;
   width: 220px; background: transparent;
@@ -248,16 +248,19 @@ button, input, select { font: inherit; color: inherit; }
 .tool-btn.main:hover { background: #d9e3fd; }
 .board-screen { overflow: hidden; }
 .topbar { overflow: hidden; }
-@media (max-width: 1440px) {
+/* the top bar holds many tools; drop the less important labels first as the window narrows */
+@media (max-width: 1700px) {
   .page-indicator { display: none; }
-}
-@media (max-width: 1300px) {
   .tool-label.secondary { display: none; }
-  .title-input { width: 160px; }
 }
-@media (max-width: 1050px) {
+@media (max-width: 1500px) {
+  .title-input { width: 160px; }
+  .topbar .btn .tool-label { display: none; }
+}
+@media (max-width: 1200px) {
   .tool-label { display: none; }
-  .page-indicator, .save-indicator { display: none; }
+  .save-indicator { display: none; }
+  .title-input { width: 120px; }
 }
 
 .welcome-icon { font-size: 18px; line-height: 1; }
@@ -430,3 +433,43 @@ button, input, select { font: inherit; color: inherit; }
 }
 .graph-focus-header .btn { margin-inline-start: auto; }
 .graph-focus-frame { flex: 1; width: 100%; border: 0; display: block; }
+
+/* ---------- snippet library ---------- */
+.library-dialog { width: min(1100px, 100%); max-height: calc(100vh - 40px); }
+.library-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.library-top .tabs { flex: 1; border-bottom: 0; }
+.library-search { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 220px; }
+.library-body { display: grid; grid-template-columns: minmax(280px, 1fr) 1.3fr; gap: 16px; min-height: 0; }
+.library-list { overflow-y: auto; max-height: calc(100vh - 260px); display: flex; flex-direction: column; gap: 10px; padding-inline-end: 4px; }
+.library-group-title { font-size: 12px; font-weight: 500; color: var(--muted); padding: 2px 6px; }
+.library-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.library-item:hover { background: #f0f2f7; }
+.library-item.active { background: var(--primary-soft); border-color: #c5d3fb; }
+.library-item-kind { width: 20px; text-align: center; color: var(--muted); font-family: "Times New Roman", serif; }
+.library-item-title { flex: 1; }
+.library-item .icon-btn.small { min-width: 26px; height: 26px; font-size: 13px; }
+.library-preview-wrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.library-preview {
+  flex: 1; min-height: 240px; max-height: calc(100vh - 330px); overflow: auto; padding: 14px;
+  border: 1px dashed var(--border); border-radius: var(--radius); background: #fff;
+}
+.library-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.library-actions .hint { margin-inline-start: auto; }
+@media (max-width: 900px) {
+  .library-body { grid-template-columns: 1fr; }
+}
+
+/* ---------- shortcuts dialog ---------- */
+.shortcuts-dialog { width: min(1000px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; }
+.shortcuts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 6px 24px; }
+.shortcuts-section h3 { margin: 8px 0 4px; font-size: 14px; color: var(--primary); }
+.shortcuts-section table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.shortcuts-section td { padding: 3px 4px; vertical-align: top; border-bottom: 1px solid #f0f2f6; }
+.shortcut-keys { white-space: nowrap; width: 1%; text-align: left; }
+.shortcut-keys kbd {
+  display: inline-block; margin: 1px 2px; padding: 1px 7px; border: 1px solid #ced4da; border-bottom-width: 2px;
+  border-radius: 5px; background: #f8f9fa; font: 12px Rubik, "Segoe UI", sans-serif; color: #343a40; unicode-bidi: isolate;
+}

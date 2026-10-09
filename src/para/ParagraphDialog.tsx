@@ -20,10 +20,13 @@ $$|a_n - L| < \varepsilon$$`;
 /** Editor for a "paragraph": Hebrew text with inline and display math, Word-like with a "/" menu. */
 export function ParagraphDialog({
   initial,
+  isEdit = initial !== undefined,
   onSubmit,
   onCancel,
 }: {
   initial?: ParagraphValue;
+  /** True when an element on the board is being edited (false for a library snippet). */
+  isEdit?: boolean;
   /** `asNew` adds a separate paragraph even when an existing one is being edited. */
   onSubmit: (value: ParagraphValue, asNew?: boolean) => void;
   onCancel: () => void;
@@ -83,7 +86,7 @@ export function ParagraphDialog({
     <div className="modal-backdrop eq-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="modal para-dialog" role="dialog" aria-label="עורך פסקאות">
         <div className="modal-header">
-          <h2>{initial ? "עריכת פסקה" : "פסקה חדשה"}</h2>
+          <h2>{isEdit ? "עריכת פסקה" : "פסקה חדשה"}</h2>
           <button className="icon-btn" onClick={onCancel} aria-label="סגור">✕</button>
         </div>
 
@@ -169,10 +172,10 @@ export function ParagraphDialog({
         <div className="modal-footer">
           <span className="hint">Ctrl+Enter להוספה · Esc לביטול</span>
           <button className="btn" onClick={onCancel}>ביטול</button>
-          {initial && (
+          {isEdit && (
             <button className="btn" onClick={() => submit(true)} title="משאיר את הפסקה המקורית ומוסיף חדשה">הוסף כפסקה חדשה</button>
           )}
-          <button className="btn primary" onClick={() => submit()}>{initial ? "עדכן" : "הוסף ללוח"}</button>
+          <button className="btn primary" onClick={() => submit()}>{isEdit ? "עדכן" : "הוסף ללוח"}</button>
         </div>
       </div>
     </div>

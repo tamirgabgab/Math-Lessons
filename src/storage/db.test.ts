@@ -3,17 +3,22 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
 import {
+  addSnippet,
+  allSnippets,
   createBoard,
   createFromTemplate,
   db,
   deleteBoard,
+  deleteSnippet,
   exportBackup,
   getBoard,
   importBackup,
   listBoards,
+  listSnippets,
   saveAsTemplate,
   saveBoardContent,
 } from "./db";
+import { BUILTIN_SNIPPETS } from "../library/content";
 
 const image = (id: string, fileId: string) =>
   ({ id, type: "image", fileId, isDeleted: false }) as unknown as ExcalidrawElement;
@@ -22,6 +27,7 @@ const file = (id: string) => ({ id, dataURL: "data:x", mimeType: "image/png", cr
 beforeEach(async () => {
   await db.boards.clear();
   await db.contents.clear();
+  await db.snippets.clear();
 });
 
 describe("boards", () => {
@@ -74,12 +80,36 @@ describe("boards", () => {
     expect(await listBoards()).toHaveLength(0);
 
     const count = await importBackup(await blob.text());
-    expect(count).toBe(2);
+    expect(count).toEqual({ boards: 2, snippets: 0 });
     expect((await listBoards()).map((b) => b.title).sort()).toEqual(["א", "ב"]);
     expect(await getBoard(a.id)).not.toBeNull();
   });
 
   it("rejects files that are not backups", async () => {
     await expect(importBackup(JSON.stringify({ hello: 1 }))).rejects.toThrow();
+  });
+});
+
+describe("library snippets", () => {
+  it("stores user snippets next to the built-in ones and round-trips them through a backup", async () => {
+    const s = await addSnippet({ topic: "infi1", title: "  ", kind: "para", body: "**הגדרה.** $x$", subtopic: "" });
+    expect(s.builtin).toBe(false);
+    expect(s.title).toBe("קטע ללא שם");
+    expect(s.subtopic).toBeUndefined();
+    expect(await listSnippets()).toHaveLength(1);
+    expect((await allSnippets()).length).toBe(BUILTIN_SNIPPETS.length + 1);
+
+    const blob = await exportBackup();
+    await deleteSnippet(s.id);
+    expect(await listSnippets()).toHaveLength(0);
+
+    const count = await importBackup(await blob.text());
+    expect(count.snippets).toBe(1);
+    expect((await listSnippets())[0].id).toBe(s.id);
+  });
+
+  it("still loads version 1 backups without snippets", async () => {
+    const v1 = { app: "math-lessons", version: 1, exportedAt: 1, boards: [], contents: [] };
+    expect(await importBackup(JSON.stringify(v1))).toEqual({ boards: 0, snippets: 0 });
   });
 });
