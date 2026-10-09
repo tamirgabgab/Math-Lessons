@@ -413,3 +413,20 @@ button, input, select { font: inherit; color: inherit; }
 @media (max-width: 900px) {
   .para-body { grid-template-columns: 1fr; }
 }
+
+/* ---------- graph focus mode (graph over the whole window) ---------- */
+.graph-focus-btn {
+  height: 22px; padding: 0 8px; border: 1px solid #ced4da; border-radius: 6px; background: #fff; cursor: pointer;
+  font: 600 12px Rubik, Arial, sans-serif; color: #343a40; pointer-events: auto; flex: none; white-space: nowrap;
+}
+.graph-focus-btn:hover { background: var(--primary-soft); border-color: #a5b8f5; }
+.graph-focus {
+  position: fixed; inset: 0; z-index: 1500; /* above Excalidraw, below .modal-backdrop (2000) */
+  display: flex; flex-direction: column; background: #fff;
+}
+.graph-focus-header {
+  height: 40px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+  background: #eef1f6; border-bottom: 1px solid #dee2e6; color: #495057; font-size: 13px;
+}
+.graph-focus-header .btn { margin-inline-start: auto; }
+.graph-focus-frame { flex: 1; width: 100%; border: 0; display: block; }

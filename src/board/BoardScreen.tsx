@@ -36,13 +36,14 @@ import { getMathData, isMathElement, upsertEquation } from "../math/insertEquati
 import { ParagraphDialog } from "../para/ParagraphDialog";
 import { getParaData, isParaElement, upsertParagraph, type ParagraphValue } from "../para/insertParagraph";
 import {
+  getGraphData,
   insertGraph,
   installGgbBridge,
   renderEmbeddable,
   validateEmbeddable,
   type GgbApp,
-  type GraphEngine,
 } from "../graph/graphs";
+import { GraphFocus } from "../graph/GraphFocus";
 import { GraphMenu } from "./GraphMenu";
 import { ProbabilityDialog } from "../probability/ProbabilityDialog";
 import { insertDiagram } from "../probability/materialize";
@@ -118,6 +119,8 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
   const [selectedEditable, setSelectedEditable] = useState<{ id: string; kind: EditableKind } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  /** Graph shown over the whole window ("focus mode"). */
+  const [focusGraph, setFocusGraph] = useState<string | null>(null);
 
   const lastHashRef = useRef<number | null>(null);
   const saveTimerRef = useRef<number | undefined>(undefined);
@@ -140,7 +143,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     };
   }, [boardId]);
 
-  useEffect(() => installGgbBridge(() => apiRef.current), []);
+  useEffect(() => installGgbBridge(() => apiRef.current, setFocusGraph), []);
 
   // ---------- saving ----------
   /** Copies the live scene of the current page into contentRef. */
@@ -348,8 +351,8 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     setProbDialog(false);
   };
 
-  const addGraph = (app: GgbApp = "graphing", engine?: GraphEngine) => {
-    if (api) insertGraph(api, app, engine);
+  const addGraph = (app: GgbApp = "graphing") => {
+    if (api) insertGraph(api, app);
   };
 
   // double-click an equation or paragraph → edit it (instead of Excalidraw's image crop)
@@ -364,7 +367,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
   // keyboard shortcuts
   useEffect(() => {
-    const dialogOpen = eqDialog || paraDialog || probDialog;
+    const dialogOpen = eqDialog || paraDialog || probDialog || focusGraph;
     const onKey = (e: KeyboardEvent) => {
       if (dialogOpen || isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
       const api = apiRef.current;
@@ -422,7 +425,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       window.removeEventListener("keydown", onEnterCapture, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eqDialog, paraDialog, probDialog, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
+  }, [eqDialog, paraDialog, probDialog, focusGraph, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
 
   // ---------- presentation mode ----------
   const togglePresenting = async () => {
@@ -621,10 +624,10 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
                     פסקה — הגדרה או משפט עם נוסחאות בתוך הטקסט
                   </WelcomeScreen.Center.MenuItem>
                   <WelcomeScreen.Center.MenuItem onSelect={() => addGraph("graphing")} shortcut="Alt+G" icon={<span className="welcome-icon">📈</span>}>
-                    גרף ומערכת צירים
+                    גרף Desmos ומערכת צירים
                   </WelcomeScreen.Center.MenuItem>
                   <WelcomeScreen.Center.MenuItem onSelect={() => addGraph("3d")} shortcut="Alt+3" icon={<span className="welcome-icon">🧊</span>}>
-                    גרף תלת-ממדי
+                    גרף תלת-ממדי Desmos
                   </WelcomeScreen.Center.MenuItem>
                   <WelcomeScreen.Center.MenuItem onSelect={() => setProbDialog(true)} shortcut="Alt+P" icon={<span className="welcome-icon">🎲</span>}>
                     עץ הסתברויות, דיאגרמת ון וטבלה
@@ -661,6 +664,14 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       )}
 
       {probDialog && <ProbabilityDialog onInsert={onProbabilityInsert} onCancel={() => setProbDialog(false)} />}
+
+      {focusGraph && api && (
+        <GraphFocus
+          graphId={focusGraph}
+          app={getGraphData(api.getSceneElementsIncludingDeleted().find((e) => e.id === focusGraph))?.app ?? "graphing"}
+          onClose={() => setFocusGraph(null)}
+        />
+      )}
 
       {eqDialog && (
         <EquationDialog

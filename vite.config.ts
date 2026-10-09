@@ -6,14 +6,14 @@ export default defineConfig({
   plugins: [
     react(),
     // Installable app ("Install" in Chrome/Edge) that keeps working offline for drawing and
-    // equations. GeoGebra/Desmos graphs always need the internet.
+    // equations. Desmos graphs and the quick-solve CAS always need the internet.
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "לוח שיעורים — מתמטיקה, פיזיקה והסתברות",
         short_name: "לוח שיעורים",
-        description: "לוח לשיעורים פרטיים: ציור, משוואות LaTeX וגרפים של GeoGebra ו-Desmos",
+        description: "לוח לשיעורים פרטיים: ציור, פסקאות ומשוואות LaTeX, וגרפים של Desmos",
         lang: "he",
         dir: "rtl",
         theme_color: "#2f5bea",

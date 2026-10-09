@@ -11,6 +11,10 @@ import type {
 } from "@excalidraw/excalidraw/element/types";
 import { ensureVisible, placementCenter } from "../board/sceneUtils";
 
+/**
+ * New graphs are always Desmos. "geogebra" is kept so that boards made before the switch
+ * still open (their iframe page, public/ggb.html, stays as well).
+ */
 export type GraphEngine = "geogebra" | "desmos";
 export type GgbApp = "graphing" | "3d";
 
@@ -27,6 +31,8 @@ export interface GraphData {
   snapshot?: string;
   /** Size of the graph's own text/UI (1 = normal). */
   uiScale?: number;
+  /** Bumped to force the iframe to reload (fallback when the state can't be pushed into it). */
+  rev?: number;
 }
 
 export const ENGINE_LABEL: Record<GraphEngine, string> = { geogebra: "GeoGebra", desmos: "Desmos" };
@@ -53,7 +59,7 @@ export const validateEmbeddable = (link: string) =>
 
 export const GRAPH_SCALES = [0.8, 1, 1.25, 1.5, 1.75, 2];
 const SCALE_KEY = "math-lessons:graphScale";
-const DEFAULT_SCALE = 1.25;
+const DEFAULT_SCALE = 1;
 
 function preferredScale(): number {
   try {
@@ -65,29 +71,63 @@ function preferredScale(): number {
 }
 
 let apiGetter: (() => ExcalidrawImperativeAPI | null) | null = null;
+let focusRequest: ((elementId: string) => void) | null = null;
+
+function updateGraphData(
+  elementId: string,
+  patch: Partial<GraphData>,
+  captureUpdate: (typeof CaptureUpdateAction)[keyof typeof CaptureUpdateAction] = CaptureUpdateAction.IMMEDIATELY,
+) {
+  const api = apiGetter?.();
+  if (!api) return;
+  api.updateScene({
+    elements: api.getSceneElementsIncludingDeleted().map((e) => {
+      const data = e.id === elementId ? getGraphData(e) : null;
+      return data ? newElementWith(e, { customData: { ...data, ...patch } }) : e;
+    }),
+    captureUpdate,
+  });
+}
 
 /** Changes how big the graph's own UI (equations, axes, labels) is drawn. */
 function setGraphScale(elementId: string, scale: number) {
-  const api = apiGetter?.();
-  if (!api) return;
   try {
     localStorage.setItem(SCALE_KEY, String(scale));
   } catch {
     // not available — the choice just isn't remembered for new graphs
   }
-  api.updateScene({
-    elements: api.getSceneElementsIncludingDeleted().map((e) => {
-      const data = e.id === elementId ? getGraphData(e) : null;
-      return data ? newElementWith(e, { customData: { ...data, uiScale: scale } }) : e;
-    }),
-    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-  });
+  updateGraphData(elementId, { uiScale: scale });
 }
 
 function stepScale(current: number, dir: 1 | -1) {
   const i = GRAPH_SCALES.findIndex((s) => s >= current - 1e-6);
   const next = Math.min(GRAPH_SCALES.length - 1, Math.max(0, (i < 0 ? 1 : i) + dir));
   return GRAPH_SCALES[next];
+}
+
+/** The same-origin Desmos page exposes its calculator on its window. */
+type DesmosWindow = Window & { calculator?: { setState: (s: unknown) => void; getState: () => unknown } };
+
+/**
+ * Loads a Desmos state into the graph's iframe on the board. Changing `customData` does not
+ * reload the iframe (its `src` is unchanged), so after focus mode the state is pushed in by
+ * hand. Pushing triggers Desmos' "change" event, which saves a fresh snapshot through the
+ * bridge. If the iframe can't be reached, `rev` is bumped so the iframe reloads instead.
+ */
+export function pushDesmosState(elementId: string, state: string) {
+  const frame = document.querySelector<HTMLIFrameElement>(`iframe.graph-frame[data-key="${CSS.escape(elementId)}"]`);
+  const calc = (frame?.contentWindow as DesmosWindow | null | undefined)?.calculator;
+  if (calc) {
+    try {
+      calc.setState(JSON.parse(state));
+      return;
+    } catch {
+      // fall through to a reload
+    }
+  }
+  const api = apiGetter?.();
+  const data = getGraphData(api?.getSceneElementsIncludingDeleted().find((e) => e.id === elementId));
+  updateGraphData(elementId, { rev: (data?.rev ?? 0) + 1 }, CaptureUpdateAction.NEVER);
 }
 
 /**
@@ -106,6 +146,7 @@ export function renderEmbeddable(el: NonDeleted<ExcalidrawEmbeddableElement>, ap
   const zoom = appState.zoom.value;
   const ui = data.uiScale ?? 1;
   const factor = ui / zoom; // CSS scale that turns layout size into the element's size
+  const rev = data.rev ? `&rev=${data.rev}` : "";
   return (
     <div
       className="graph-embed"
@@ -117,6 +158,11 @@ export function renderEmbeddable(el: NonDeleted<ExcalidrawEmbeddableElement>, ap
           {ENGINE_LABEL[engine]} · {data.app === "3d" ? "תלת-ממד" : "דו-ממד"}
         </span>
         <span className="graph-hint">גרירה מכאן מזיזה · לחיצה כאן ואז הפינות משנות גודל</span>
+        {engine === "desmos" && (
+          <button className="graph-focus-btn" onClick={() => focusRequest?.(el.id)} title="הגרף על כל המסך (Esc חוזר ללוח)">
+            ⛶ מסך מלא
+          </button>
+        )}
         <span className="graph-zoom" title="גודל הכתב והסימנים בתוך הגרף">
           <button onClick={() => setGraphScale(el.id, stepScale(ui, -1))} disabled={ui <= GRAPH_SCALES[0]} aria-label="הקטן">
             A−
@@ -133,40 +179,20 @@ export function renderEmbeddable(el: NonDeleted<ExcalidrawEmbeddableElement>, ap
       </div>
       <iframe
         className="graph-frame"
+        data-key={el.id}
         title={ENGINE_LABEL[engine]}
-        src={`${PAGES[engine]}?key=${encodeURIComponent(el.id)}&app=${data.app}`}
+        src={`${PAGES[engine]}?key=${encodeURIComponent(el.id)}&app=${data.app}${rev}`}
       />
     </div>
   );
 }
 
-// ---------- preferred engine (remembered per browser) ----------
-
-const ENGINE_KEY = "math-lessons:graphEngine";
-
-export function preferredEngine(): GraphEngine {
-  try {
-    return localStorage.getItem(ENGINE_KEY) === "desmos" ? "desmos" : "geogebra";
-  } catch {
-    return "geogebra";
-  }
-}
-
-function rememberEngine(engine: GraphEngine) {
-  try {
-    localStorage.setItem(ENGINE_KEY, engine);
-  } catch {
-    // not available — nothing to remember
-  }
-}
-
-export function insertGraph(api: ExcalidrawImperativeAPI, app: GgbApp = "graphing", engine = preferredEngine()) {
-  rememberEngine(engine);
+/** Adds a graph that nearly fills the visible board (the teacher mostly works in one graph at a time). */
+export function insertGraph(api: ExcalidrawImperativeAPI, app: GgbApp = "graphing", engine: GraphEngine = "desmos") {
   const s = api.getAppState();
   const zoom = s.zoom.value;
-  // a comfortable size on screen: up to 900×640 px, leaving some board around it
-  const width = Math.min(900, s.width * 0.75) / zoom;
-  const height = Math.min(640, s.height * 0.8) / zoom;
+  const width = ((s.width - 40) / zoom) * 0.92;
+  const height = ((s.height - 40) / zoom) * 0.88;
   const center = placementCenter(api, width, height);
   // Build a rectangle skeleton and turn it into an embeddable (skeletons can't create embeddables).
   const [base] = convertToExcalidrawElements([
@@ -201,12 +227,15 @@ declare global {
       getInitial: (key: string) => { engine: GraphEngine; app: GgbApp; base64?: string; state?: string } | null;
       /** `data` is the GeoGebra base64 file or the Desmos state JSON, depending on the engine. */
       onChange: (key: string, data: string, snapshot: string | null) => void;
+      /** Set while focus mode is open; desmos.html calls it on Escape. */
+      closeFocus?: () => void;
     };
   }
 }
 
-export function installGgbBridge(getApi: () => ExcalidrawImperativeAPI | null) {
+export function installGgbBridge(getApi: () => ExcalidrawImperativeAPI | null, onFocusRequest?: (elementId: string) => void) {
   apiGetter = getApi;
+  focusRequest = onFocusRequest ?? null;
   const find = (key: string) =>
     getApi()?.getSceneElementsIncludingDeleted().find((el) => el.id === key) ?? null;
 
@@ -235,5 +264,6 @@ export function installGgbBridge(getApi: () => ExcalidrawImperativeAPI | null) {
   return () => {
     delete window.mlGgbBridge;
     apiGetter = null;
+    focusRequest = null;
   };
 }

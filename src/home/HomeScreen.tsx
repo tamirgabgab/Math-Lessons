@@ -146,7 +146,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
       // storage unavailable
     }
     const value = window.prompt(
-      "מפתח API של Desmos (מקבלים בחינם ב-desmos.com/my-api).\nהשאר ריק כדי להשתמש במפתח ההדגמה של Desmos.",
+      "מפתח API של Desmos (מקבלים בחינם ב-desmos.com/my-api).\nהשאר ריק כדי להשתמש במפתח המובנה.",
       current,
     );
     if (value === null) return;

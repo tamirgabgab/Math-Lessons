@@ -19,14 +19,16 @@
       // Runs one Desmos calculator inside an iframe placed on the board. Same bridge as ggb.html:
       //   window.parent.mlGgbBridge.getInitial(key) -> { app, state }   and   onChange(key, stateJson, pngDataUrl)
       (function () {
-        // Desmos' public demo key — fine for personal use; replace it with your own key from
-        // https://www.desmos.com/my-api by saving it in the app (localStorage "math-lessons:desmosApiKey").
-        var DEMO_KEY = "dcb31709b452b1cf9dc26972add0fda6";
-        var apiKey = DEMO_KEY;
-        try { apiKey = localStorage.getItem("math-lessons:desmosApiKey") || DEMO_KEY; } catch (e) {}
+        // The owner's Desmos API key (https://www.desmos.com/my-api). Another key can be saved
+        // in the app ("⚙ Desmos" in the library → localStorage "math-lessons:desmosApiKey").
+        var DEFAULT_KEY = "0b9ac6d01a43431dba882aa8bcf37600";
+        var apiKey = DEFAULT_KEY;
+        try { apiKey = localStorage.getItem("math-lessons:desmosApiKey") || DEFAULT_KEY; } catch (e) {}
 
         var params = new URLSearchParams(location.search);
         var key = params.get("key");
+        // focus=1: this frame is the full-window overlay; Escape goes back to the board
+        var focus = params.get("focus") === "1";
         var bridge = window.parent && window.parent !== window ? window.parent.mlGgbBridge : null;
         var init = (bridge && bridge.getInitial(key)) || {};
         var app = init.app || params.get("app") || "graphing";
@@ -49,6 +51,8 @@
             expressionsCollapsed: false,
             border: false,
             autosize: true,
+            // thicker lines and bigger text — the board is usually shared over Zoom
+            projectorMode: true,
           };
           var calc;
           try {
@@ -59,6 +63,15 @@
           }
           status.style.display = "none";
           window.calculator = calc;
+          if (focus) {
+            // the key event stays inside the iframe, so hand Escape to the board ourselves
+            document.addEventListener("keydown", function (e) {
+              if (e.key === "Escape" && bridge && typeof bridge.closeFocus === "function") {
+                e.preventDefault();
+                bridge.closeFocus();
+              }
+            }, true);
+          }
           if (init.state) {
             try { calc.setState(JSON.parse(init.state)); } catch (e) {}
           }
