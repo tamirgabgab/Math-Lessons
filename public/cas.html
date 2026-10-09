@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="he">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GeoGebra CAS</title>
+    <style>html, body { margin: 0; height: 100%; overflow: hidden; }</style>
+  </head>
+  <body>
+    <div id="ggb"></div>
+    <script>
+      // Hidden GeoGebra CAS used by the "quick solve" buttons. The board loads this page in an
+      // invisible iframe and calls window.ggbApplet.evalCommandCAS(...) once window.casReady resolves.
+      window.casReady = new Promise(function (resolve, reject) {
+        var script = document.createElement("script");
+        script.src = "https://www.geogebra.org/apps/deployggb.js";
+        script.onerror = function () { reject(new Error("offline")); };
+        script.onload = function () {
+          new window.GGBApplet(
+            {
+              appName: "cas",
+              width: 600,
+              height: 400,
+              showToolBar: false,
+              showAlgebraInput: false,
+              showMenuBar: false,
+              language: "en",
+              appletOnLoad: function (api) { resolve(api); },
+            },
+            true,
+          ).inject("ggb");
+        };
+        document.head.appendChild(script);
+      });
+    </script>
+  </body>
+</html>

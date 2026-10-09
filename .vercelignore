@@ -1,0 +1,7 @@
+node_modules
+dist
+.claude
+# generated from node_modules during the build (scripts/copy-assets.mjs)
+public/mathlive
+public/excalidraw-assets
+*.tsbuildinfo

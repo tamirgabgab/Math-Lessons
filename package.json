@@ -1,0 +1,40 @@
+{
+  "name": "math-lessons",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "copy-assets": "node scripts/copy-assets.mjs",
+    "predev": "npm run copy-assets",
+    "dev": "vite",
+    "prebuild": "npm run copy-assets",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "deploy": "npx --yes vercel --prod"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
+    "dexie": "^4.4.6",
+    "jspdf": "^4.2.1",
+    "mathjax-full": "^3.2.2",
+    "mathlive": "^0.111.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.3",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3",
+    "workbox-build": "^7.4.1",
+    "workbox-window": "^7.4.1"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

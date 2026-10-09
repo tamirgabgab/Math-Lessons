@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="he">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Desmos</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+      #calc { position: absolute; inset: 0; }
+      #status {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font: 15px Rubik, Arial, sans-serif; color: #666; direction: rtl; text-align: center; padding: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status">טוען גרף…</div>
+    <div id="calc"></div>
+    <script>
+      // Runs one Desmos calculator inside an iframe placed on the board. Same bridge as ggb.html:
+      //   window.parent.mlGgbBridge.getInitial(key) -> { app, state }   and   onChange(key, stateJson, pngDataUrl)
+      (function () {
+        // Desmos' public demo key — fine for personal use; replace it with your own key from
+        // https://www.desmos.com/my-api by saving it in the app (localStorage "math-lessons:desmosApiKey").
+        var DEMO_KEY = "dcb31709b452b1cf9dc26972add0fda6";
+        var apiKey = DEMO_KEY;
+        try { apiKey = localStorage.getItem("math-lessons:desmosApiKey") || DEMO_KEY; } catch (e) {}
+
+        var params = new URLSearchParams(location.search);
+        var key = params.get("key");
+        var bridge = window.parent && window.parent !== window ? window.parent.mlGgbBridge : null;
+        var init = (bridge && bridge.getInitial(key)) || {};
+        var app = init.app || params.get("app") || "graphing";
+        var status = document.getElementById("status");
+
+        var script = document.createElement("script");
+        script.src = "https://www.desmos.com/api/v1.12/calculator.js?apiKey=" + encodeURIComponent(apiKey);
+        script.onerror = function () {
+          status.textContent = "לא ניתן לטעון את Desmos — בדוק את החיבור לאינטרנט.";
+        };
+        script.onload = start;
+        document.head.appendChild(script);
+
+        function start() {
+          var el = document.getElementById("calc");
+          var options = {
+            keypad: true,
+            settingsMenu: true,
+            zoomButtons: true,
+            expressionsCollapsed: false,
+            border: false,
+            autosize: true,
+          };
+          var calc;
+          try {
+            calc = app === "3d" ? Desmos.Calculator3D(el, options) : Desmos.GraphingCalculator(el, options);
+          } catch (e) {
+            status.textContent = "Desmos לא נטען: " + e.message;
+            return;
+          }
+          status.style.display = "none";
+          window.calculator = calc;
+          if (init.state) {
+            try { calc.setState(JSON.parse(init.state)); } catch (e) {}
+          }
+
+          var timer = null;
+          function save() {
+            if (!bridge) return;
+            var state = JSON.stringify(calc.getState());
+            function send(png) { bridge.onChange(key, state, png || null); }
+            // the 3D calculator throws on asyncScreenshot ("unimplemented in 3D"), so fall back to screenshot()
+            try {
+              calc.asyncScreenshot({ targetPixelRatio: 1.5 }, send);
+              return;
+            } catch (e) {}
+            try {
+              send(calc.screenshot({ targetPixelRatio: 1.5 }));
+            } catch (e) {
+              send(null);
+            }
+          }
+          function scheduleSave() {
+            clearTimeout(timer);
+            timer = setTimeout(save, 700);
+          }
+          if (typeof calc.observeEvent === "function") calc.observeEvent("change", scheduleSave);
+          // fresh snapshot on every load, so thumbnails and PDF export always match the graph
+          scheduleSave();
+        }
+      })();
+    </script>
+  </body>
+</html>
