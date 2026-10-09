@@ -161,7 +161,7 @@ export function renderEmbeddable(el: NonDeleted<ExcalidrawEmbeddableElement>, ap
         <span className="graph-name">
           {ENGINE_LABEL[engine]} · {data.app === "3d" ? "תלת-ממד" : "דו-ממד"}
         </span>
-        <span className="graph-hint">גרירה מכאן מזיזה · לחיצה כאן ואז הפינות משנות גודל</span>
+        <span className="graph-hint">גרירה מכאן מזיזה · לחיצה כאן ואז הצדדים והפינות משנים גודל</span>
         {engine === "desmos" && (
           <button className="graph-focus-btn" onClick={() => focusRequest?.(el.id)} title="הגרף על כל המסך (Esc חוזר ללוח)">
             ⛶ מסך מלא
