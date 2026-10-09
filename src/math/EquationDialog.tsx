@@ -477,6 +477,7 @@ export function EquationDialog({
         {error && <div className="eq-error">{error}</div>}
 
         <QuickSolvePanel
+          latex={latexText}
           getLatex={currentLatex}
           onInsert={(latex) => onSubmit({ latex, fontSize, color }, true)}
           onUseInEditor={replaceContent}
