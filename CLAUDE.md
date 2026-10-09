@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Hebrew (RTL) whiteboard for private math/physics tutoring. The teacher uses it alone (mouse + keyboard) and screen-shares it over Zoom. Lessons are notebooks of pages that combine Excalidraw drawing, LaTeX equations, Hebrew "paragraphs" with inline math, Desmos graphs, a library of definitions/theorems (Linear Algebra 1+2, Calculus 1) and a "quick solve" that uses GeoGebra's CAS. It is a static site with no backend: all data lives in the browser's IndexedDB. The owner knows only Python, so UI text and the README are in Hebrew.
 
+## Status (October 2026)
+
+- The upgrade plan in `HANDOFF.md` (stages 0–5: paragraphs, slash menu, Desmos-only graphs with focus mode, snippet library, extended quick solve, shortcuts dialog) is fully implemented and merged into `main`. `HANDOFF.md` section 0 has the commit table and the decisions; section 11 is the prioritized backlog for the next sessions.
+- The probability dialog was removed from the UI at the owner's request (the `probability/` modules remain, unused).
+- Deployment: the GitHub repo is linked to the Vercel project `math-lessons`; every push to `main` deploys production, other branches get preview URLs. So push to `main` only when the owner asks; work on the `claude/...` branch otherwise.
+- Asset paths are relative (`base: "./"` in `vite.config.ts`, `import.meta.env.BASE_URL` for the iframe pages and MathLive fonts), so the built site also works from a sub-path.
+- A Claude artifact preview of the built site exists for quick checks. Its CSP blocks desmos.com and geogebra.org, and `alert`/`confirm`/`prompt` are inert there, so graphs, quick solve and the delete confirmations only work locally or on Vercel. `desmos.html` detects such a CSP block (`securitypolicyviolation`) and shows a different message than for a network failure.
+
 ## Commands
 
 ```bash
