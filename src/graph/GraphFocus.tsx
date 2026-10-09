@@ -57,7 +57,7 @@ export function GraphFocus({ graphId, app, onClose }: { graphId: string; app: Gg
         ref={frameRef}
         className="graph-focus-frame"
         title="Desmos"
-        src={`/desmos.html?key=${encodeURIComponent(graphId)}&app=${app}&focus=1`}
+        src={`${import.meta.env.BASE_URL}desmos.html?key=${encodeURIComponent(graphId)}&app=${app}&focus=1`}
       />
     </div>,
     document.body,

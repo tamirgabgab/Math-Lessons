@@ -13,7 +13,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function load(): Promise<CasApi> {
   const iframe = document.createElement("iframe");
-  iframe.src = "/cas.html";
+  iframe.src = `${import.meta.env.BASE_URL}cas.html`;
   iframe.title = "GeoGebra CAS";
   iframe.setAttribute("aria-hidden", "true");
   iframe.tabIndex = -1;

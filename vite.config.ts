@@ -45,6 +45,8 @@ export default defineConfig({
       },
     }),
   ],
+  // Relative asset paths, so the built site also works when hosted under a sub-path.
+  base: "./",
   // Lessons are stored per browser origin (including the port), so always use the same port.
   server: { port: 5173, strictPort: true },
   test: {

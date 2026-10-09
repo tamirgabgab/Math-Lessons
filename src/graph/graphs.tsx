@@ -43,7 +43,11 @@ const LINKS: Record<GraphEngine, string> = {
   desmos: "https://www.desmos.com/calculator",
 };
 
-const PAGES: Record<GraphEngine, string> = { geogebra: "/ggb.html", desmos: "/desmos.html" };
+// relative to the app (import.meta.env.BASE_URL), so a sub-path deployment works too
+const PAGES: Record<GraphEngine, string> = {
+  geogebra: `${import.meta.env.BASE_URL}ggb.html`,
+  desmos: `${import.meta.env.BASE_URL}desmos.html`,
+};
 
 export const engineOf = (data: GraphData): GraphEngine => data.engine ?? "geogebra";
 

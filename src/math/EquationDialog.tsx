@@ -7,7 +7,7 @@ import { MatrixForm, useSlashMenu } from "../para/SlashMenu";
 
 const r = String.raw;
 
-MathfieldElement.fontsDirectory = "/mathlive/fonts";
+MathfieldElement.fontsDirectory = `${import.meta.env.BASE_URL}mathlive/fonts`;
 MathfieldElement.soundsDirectory = null;
 
 export interface EquationValue {
