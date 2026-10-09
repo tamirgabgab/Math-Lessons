@@ -50,9 +50,6 @@ import {
 import { GraphFocus } from "../graph/GraphFocus";
 import { GraphMenu } from "./GraphMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
-import { ProbabilityDialog } from "../probability/ProbabilityDialog";
-import { insertDiagram } from "../probability/materialize";
-import type { Skeleton } from "../probability/shapes";
 import { makeThumbnail } from "../export/snapshots";
 import { exportBoardPdf } from "../export/exportPdf";
 
@@ -121,7 +118,6 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
   // `existing` = the element being edited; `initial` = content to start from (library snippet)
   const [eqDialog, setEqDialog] = useState<null | { existing?: ExcalidrawImageElement; initial?: EquationValue }>(null);
   const [paraDialog, setParaDialog] = useState<null | { existing?: ExcalidrawImageElement; initial?: ParagraphValue }>(null);
-  const [probDialog, setProbDialog] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [snippetDraft, setSnippetDraft] = useState<SnippetDraft | null>(null);
@@ -388,11 +384,6 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
   const activateLaser = () => api?.setActiveTool({ type: "laser" });
 
-  const onProbabilityInsert = (skeletons: Skeleton[]) => {
-    if (api) insertDiagram(api, skeletons);
-    setProbDialog(false);
-  };
-
   const addGraph = (app: GgbApp = "graphing") => {
     if (api) insertGraph(api, app);
   };
@@ -409,7 +400,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
   // keyboard shortcuts
   useEffect(() => {
-    const dialogOpen = eqDialog || paraDialog || probDialog || focusGraph || libraryOpen || snippetDraft || shortcutsOpen;
+    const dialogOpen = eqDialog || paraDialog || focusGraph || libraryOpen || snippetDraft || shortcutsOpen;
     const onKey = (e: KeyboardEvent) => {
       if (dialogOpen || isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
       const api = apiRef.current;
@@ -426,9 +417,6 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
         // same shortcut as Word's "insert equation"
         e.preventDefault();
         openEquationEditor();
-      } else if (e.altKey && (k === "p" || e.code === "KeyP")) {
-        e.preventDefault();
-        setProbDialog(true);
       } else if (e.altKey && (k === "l" || e.code === "KeyL")) {
         e.preventDefault();
         setLibraryOpen(true);
@@ -478,7 +466,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       window.removeEventListener("keydown", onEnterCapture, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eqDialog, paraDialog, probDialog, focusGraph, libraryOpen, snippetDraft, shortcutsOpen, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
+  }, [eqDialog, paraDialog, focusGraph, libraryOpen, snippetDraft, shortcutsOpen, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
 
   // ---------- presentation mode ----------
   const togglePresenting = async () => {
@@ -598,9 +586,6 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
             <button className="tool-btn main" onClick={() => setLibraryOpen(true)} title="ספריית הגדרות, משפטים ותבניות לפי קורס (Alt+L)">
               <span className="tool-icon">📚</span> <span className="tool-label">ספרייה</span>
             </button>
-            <button className="tool-btn main" onClick={() => setProbDialog(true)} title="עץ הסתברויות, דיאגרמת ון וטבלה דו-ממדית (Alt+P)">
-              <span className="tool-icon">🎲</span> <span className="tool-label">הסתברות</span>
-            </button>
             <span className="divider" />
             <button className="tool-btn" onClick={activatePen} title="עט (P)">
               <span className="tool-icon">✏️</span> <span className="tool-label secondary">עט</span>
@@ -694,9 +679,6 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
                   <WelcomeScreen.Center.MenuItem onSelect={() => setLibraryOpen(true)} shortcut="Alt+L" icon={<span className="welcome-icon">📚</span>}>
                     הגדרה או משפט מהספרייה
                   </WelcomeScreen.Center.MenuItem>
-                  <WelcomeScreen.Center.MenuItem onSelect={() => setProbDialog(true)} shortcut="Alt+P" icon={<span className="welcome-icon">🎲</span>}>
-                    עץ הסתברויות, דיאגרמת ון וטבלה
-                  </WelcomeScreen.Center.MenuItem>
                 </WelcomeScreen.Center.Menu>
               </WelcomeScreen.Center>
               <WelcomeScreen.Hints.ToolbarHint />
@@ -721,15 +703,12 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
           <button className="icon-btn" onClick={() => openEquationEditor()} title="משוואה (M)">∑</button>
           <button className="icon-btn" onClick={() => openParagraphEditor()} title="פסקה (Alt+T)">¶</button>
           <button className="icon-btn" onClick={() => setLibraryOpen(true)} title="ספרייה (Alt+L)">📚</button>
-          <button className="icon-btn" onClick={() => setProbDialog(true)} title="הסתברות (Alt+P)">🎲</button>
           <button className="icon-btn" onClick={activateHighlighter} title="מרקר (U)">🖍️</button>
           <button className="icon-btn" onClick={activateLaser} title="לייזר (K)">🔴</button>
           <span className="divider" />
           <button className="btn small" onClick={togglePresenting}>יציאה</button>
         </div>
       )}
-
-      {probDialog && <ProbabilityDialog onInsert={onProbabilityInsert} onCancel={() => setProbDialog(false)} />}
 
       {focusGraph && api && (
         <GraphFocus

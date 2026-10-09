@@ -34,13 +34,49 @@
         var app = init.app || params.get("app") || "graphing";
         var status = document.getElementById("status");
 
-        var script = document.createElement("script");
-        script.src = "https://www.desmos.com/api/v1.12/calculator.js?apiKey=" + encodeURIComponent(apiKey);
-        script.onerror = function () {
-          status.textContent = "לא ניתן לטעון את Desmos — בדוק את החיבור לאינטרנט.";
-        };
-        script.onload = start;
-        document.head.appendChild(script);
+        var SCRIPT_URL = "https://www.desmos.com/api/v1.12/calculator.js?apiKey=" + encodeURIComponent(apiKey);
+        // A hosting page's Content-Security-Policy (e.g. a preview that only allows its own
+        // scripts) blocks desmos.com silently; this event tells it apart from a network failure.
+        var blockedByPolicy = false;
+        document.addEventListener("securitypolicyviolation", function (e) {
+          if (/desmos\.com/.test(e.blockedURI || "")) blockedByPolicy = true;
+        });
+
+        function showError() {
+          status.innerHTML = "";
+          var p = document.createElement("div");
+          if (blockedByPolicy) {
+            p.textContent =
+              "הדף שבו נפתח הלוח חוסם טעינת סקריפטים מאתרים חיצוניים, ולכן Desmos לא יכול להיטען כאן " +
+              "(זה קורה למשל בתצוגה המקדימה של Claude). בהרצה מקומית (start.bat) או באתר ב-Vercel הגרף עובד.";
+          } else {
+            p.textContent =
+              "לא ניתן לטעון את Desmos מ-www.desmos.com. בדוק את החיבור לאינטרנט, ואם יש חוסם פרסומות " +
+              "או חומת אש שחוסמים את desmos.com. אם הגדרת מפתח API משלך, ודא שהוא תקין (⚙ Desmos בספרייה).";
+          }
+          var btn = document.createElement("button");
+          btn.textContent = "נסה שוב";
+          btn.style.cssText = "margin-top:10px;font:inherit;padding:4px 14px;border:1px solid #bbb;border-radius:6px;background:#f6f7fb;cursor:pointer;";
+          btn.onclick = loadScript;
+          var wrap = document.createElement("div");
+          wrap.appendChild(p);
+          wrap.appendChild(btn);
+          status.appendChild(wrap);
+        }
+
+        function loadScript() {
+          status.textContent = "טוען גרף…";
+          blockedByPolicy = false;
+          var script = document.createElement("script");
+          script.src = SCRIPT_URL;
+          script.onerror = function () {
+            // the CSP event (if any) is dispatched before onerror, but give it a tick to be safe
+            setTimeout(showError, 50);
+          };
+          script.onload = start;
+          document.head.appendChild(script);
+        }
+        loadScript();
 
         function start() {
           var el = document.getElementById("calc");

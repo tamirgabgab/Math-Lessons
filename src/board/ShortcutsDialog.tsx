@@ -14,7 +14,6 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
       { keys: ["Alt+G"], what: "גרף Desmos דו-ממדי" },
       { keys: ["Alt+3"], what: "גרף Desmos תלת-ממדי" },
       { keys: ["Alt+L"], what: "ספריית הגדרות, משפטים ותבניות" },
-      { keys: ["Alt+P"], what: "עץ הסתברויות, דיאגרמת ון וטבלה" },
     ],
   },
   {

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Hebrew (RTL) whiteboard for private math/physics/probability tutoring. The teacher uses it alone (mouse + keyboard) and screen-shares it over Zoom. Lessons are notebooks of pages that combine Excalidraw drawing, LaTeX equations, Hebrew "paragraphs" with inline math, Desmos graphs, probability diagrams, a library of definitions/theorems (Linear Algebra 1+2, Calculus 1) and a "quick solve" that uses GeoGebra's CAS. It is a static site with no backend: all data lives in the browser's IndexedDB. The owner knows only Python, so UI text and the README are in Hebrew.
+A Hebrew (RTL) whiteboard for private math/physics tutoring. The teacher uses it alone (mouse + keyboard) and screen-shares it over Zoom. Lessons are notebooks of pages that combine Excalidraw drawing, LaTeX equations, Hebrew "paragraphs" with inline math, Desmos graphs, a library of definitions/theorems (Linear Algebra 1+2, Calculus 1) and a "quick solve" that uses GeoGebra's CAS. It is a static site with no backend: all data lives in the browser's IndexedDB. The owner knows only Python, so UI text and the README are in Hebrew.
 
 ## Commands
 
@@ -58,7 +58,7 @@ Templates are boards with `isTemplate: true`. Backup and restore is a JSON dump 
   - The snapshot is used for thumbnails and PDF export (`export/snapshots.ts` swaps graphs for images, keeping their proportions).
   - **Focus mode** (`graph/GraphFocus.tsx`): a portal overlay (z-index 1500, under the modals) with a second `desmos.html?…&focus=1` iframe on the same element. Escape inside the iframe is forwarded through `bridge.closeFocus`. On close the overlay's `calculator.getState()` is written to the element and pushed into the board iframe with `pushDesmosState` (changing `customData` does not reload an iframe because its `src` is unchanged); if the iframe can't be reached, `customData.rev` is bumped, which changes the `src` and reloads it.
 - **Library** (`library/`): `content/{linear1,linear2,infi1}.ts` hold the built-in snippets (`builtin: true`, Hebrew paragraph sources or LaTeX); user snippets live in the Dexie `snippets` table (schema version 2) and are part of backups (file version 2). `content.test.ts` renders every formula of every snippet, so broken LaTeX fails the tests.
-- **Probability diagrams** (`probability/`): generators build Excalidraw *skeletons*. `materialize.ts` converts them, applies the text anchors from `customData.anchor`, groups the elements, and places them on the board.
+- **Probability diagrams** (`probability/`): generators build Excalidraw *skeletons*. `materialize.ts` converts them, applies the text anchors from `customData.anchor`, groups the elements, and places them on the board. The dialog is no longer wired into the UI (the owner asked to drop the 🎲 button); the modules and tests are kept so it can be re-enabled by rendering `ProbabilityDialog` from `BoardScreen` again.
 
 **Graph embed details.**
 - Graphs are always interactive. The wrapper has `pointer-events: none` and the iframe has `auto`, so the grey header bar lets clicks fall through to the canvas (to drag or select) while the graph itself gets the mouse directly.
