@@ -33,6 +33,8 @@ import { PagesPanel } from "./PagesPanel";
 import { elementAtClientPoint, singleSelected } from "./sceneUtils";
 import { EquationDialog, type EquationValue } from "../math/EquationDialog";
 import { getMathData, isMathElement, upsertEquation } from "../math/insertEquation";
+import { ParagraphDialog } from "../para/ParagraphDialog";
+import { getParaData, isParaElement, upsertParagraph, type ParagraphValue } from "../para/insertParagraph";
 import {
   insertGraph,
   installGgbBridge,
@@ -90,6 +92,12 @@ const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
   (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "MATH-FIELD"].includes(t.tagName));
 
+/** Elements with their own editor (opened by double-click / Enter / the "edit" button). */
+type EditableKind = "math" | "para";
+const isEditableElement = (el: ExcalidrawElement | null | undefined): el is ExcalidrawImageElement =>
+  isMathElement(el) || isParaElement(el);
+const editableKind = (el: ExcalidrawElement): EditableKind => (isMathElement(el) ? "math" : "para");
+
 export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () => void }) {
   const [meta, setMeta] = useState<BoardMeta | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -105,8 +113,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
 
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [eqDialog, setEqDialog] = useState<null | { existing?: ExcalidrawImageElement }>(null);
+  const [paraDialog, setParaDialog] = useState<null | { existing?: ExcalidrawImageElement }>(null);
   const [probDialog, setProbDialog] = useState(false);
-  const [selectedMathId, setSelectedMathId] = useState<string | null>(null);
+  const [selectedEditable, setSelectedEditable] = useState<{ id: string; kind: EditableKind } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -199,14 +208,14 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
         scheduleSave();
       }
 
-      // selection → "edit equation" button
+      // selection → "edit equation / paragraph" button
       const ids = Object.keys(appState.selectedElementIds);
-      let mathId: string | null = null;
+      let editable: { id: string; kind: EditableKind } | null = null;
       if (ids.length === 1) {
         const el = elements.find((e) => e.id === ids[0]);
-        if (isMathElement(el)) mathId = el.id;
+        if (isEditableElement(el)) editable = { id: el.id, kind: editableKind(el) };
       }
-      setSelectedMathId((prev) => (prev === mathId ? prev : mathId));
+      setSelectedEditable((prev) => (prev?.id === editable?.id && prev?.kind === editable?.kind ? prev : editable));
 
       // leaving the highlighter restores the previous pen settings
       if (highlighterPrevRef.current && appState.activeTool.type !== "freedraw") {
@@ -285,10 +294,28 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     setEqDialog(null);
   };
 
-  const editSelectedEquation = () => {
+  const openParagraphEditor = useCallback((existing?: ExcalidrawImageElement) => {
+    setParaDialog({ existing });
+  }, []);
+
+  const onParagraphSubmit = (value: ParagraphValue, asNew?: boolean) => {
+    if (api) upsertParagraph(api, value, asNew ? undefined : paraDialog?.existing);
+    setParaDialog(null);
+  };
+
+  /** Opens the editor that matches the element's kind. */
+  const openEditorFor = useCallback(
+    (el: ExcalidrawImageElement) => {
+      if (isMathElement(el)) openEquationEditor(el);
+      else if (isParaElement(el)) openParagraphEditor(el);
+    },
+    [openEquationEditor, openParagraphEditor],
+  );
+
+  const editSelected = () => {
     if (!api) return;
     const el = singleSelected(api);
-    if (isMathElement(el)) openEquationEditor(el);
+    if (isEditableElement(el)) openEditorFor(el);
   };
 
   const activateHighlighter = () => {
@@ -325,20 +352,21 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
     if (api) insertGraph(api, app, engine);
   };
 
-  // double-click an equation → edit it (instead of Excalidraw's image crop)
+  // double-click an equation or paragraph → edit it (instead of Excalidraw's image crop)
   const onDoubleClickCapture = (e: React.MouseEvent) => {
     if (!api || isTypingTarget(e.target)) return;
-    const el = elementAtClientPoint(api, e.clientX, e.clientY, isMathElement);
+    const el = elementAtClientPoint(api, e.clientX, e.clientY, isEditableElement);
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
-    openEquationEditor(el);
+    openEditorFor(el);
   };
 
   // keyboard shortcuts
   useEffect(() => {
+    const dialogOpen = eqDialog || paraDialog || probDialog;
     const onKey = (e: KeyboardEvent) => {
-      if (eqDialog || probDialog || isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
+      if (dialogOpen || isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
       const api = apiRef.current;
       if (!api) return;
       if (api.getAppState().editingTextElement) return;
@@ -356,6 +384,11 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       } else if (e.altKey && (k === "p" || e.code === "KeyP")) {
         e.preventDefault();
         setProbDialog(true);
+      } else if (e.altKey && (k === "t" || e.code === "KeyT")) {
+        // Alt+T = paragraph (plain T stays Excalidraw's text tool)
+        e.preventDefault();
+        const el = singleSelected(api);
+        openParagraphEditor(isParaElement(el) ? el : undefined);
       } else if (e.altKey && (e.key === "3" || e.code === "Digit3")) {
         e.preventDefault();
         insertGraph(api, "3d");
@@ -371,16 +404,16 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
         activateHighlighter();
       }
     };
-    // Enter on a selected equation edits it (Excalidraw would start cropping the image),
-    // so this one is caught in the capture phase, before Excalidraw sees it.
+    // Enter on a selected equation/paragraph edits it (Excalidraw would start cropping the
+    // image), so this one is caught in the capture phase, before Excalidraw sees it.
     const onEnterCapture = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || eqDialog || isTypingTarget(e.target)) return;
+      if (e.key !== "Enter" || dialogOpen || isTypingTarget(e.target)) return;
       const api = apiRef.current;
       const el = api && singleSelected(api);
-      if (!isMathElement(el)) return;
+      if (!isEditableElement(el)) return;
       e.preventDefault();
       e.stopPropagation();
-      openEquationEditor(el);
+      openEditorFor(el);
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keydown", onEnterCapture, true);
@@ -389,7 +422,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
       window.removeEventListener("keydown", onEnterCapture, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eqDialog, probDialog, presenting, switchToPage, openEquationEditor]);
+  }, [eqDialog, paraDialog, probDialog, presenting, switchToPage, openEquationEditor, openParagraphEditor, openEditorFor]);
 
   // ---------- presentation mode ----------
   const togglePresenting = async () => {
@@ -502,6 +535,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
             <button className="tool-btn main" onClick={() => openEquationEditor()} title="הוספת משוואה — עורך בסגנון Word עם קוד LaTeX (M או Alt+=)">
               <span className="tool-icon serif">∑</span> <span className="tool-label">משוואה</span>
             </button>
+            <button className="tool-btn main" onClick={() => openParagraphEditor()} title="הוספת פסקה — טקסט בעברית עם נוסחאות בתוכו, הגדרות ומשפטים (Alt+T)">
+              <span className="tool-icon serif">¶</span> <span className="tool-label">פסקה</span>
+            </button>
             <GraphMenu onPick={addGraph} />
             <button className="tool-btn main" onClick={() => setProbDialog(true)} title="עץ הסתברויות, דיאגרמת ון וטבלה דו-ממדית (Alt+P)">
               <span className="tool-icon">🎲</span> <span className="tool-label">הסתברות</span>
@@ -516,11 +552,15 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
             <button className="tool-btn" onClick={activateLaser} title="מצביע לייזר (K)">
               <span className="tool-icon">🔴</span> <span className="tool-label secondary">לייזר</span>
             </button>
-            {selectedMathId && (
+            {selectedEditable && (
               <>
                 <span className="divider" />
-                <button className="tool-btn accent" onClick={editSelectedEquation} title="ערוך את המשוואה המסומנת (לחיצה כפולה)">
-                  ✎ <span className="tool-label secondary">ערוך משוואה</span>
+                <button
+                  className="tool-btn accent"
+                  onClick={editSelected}
+                  title={selectedEditable.kind === "math" ? "ערוך את המשוואה המסומנת (לחיצה כפולה או Enter)" : "ערוך את הפסקה המסומנת (לחיצה כפולה או Enter)"}
+                >
+                  ✎ <span className="tool-label secondary">{selectedEditable.kind === "math" ? "ערוך משוואה" : "ערוך פסקה"}</span>
                 </button>
               </>
             )}
@@ -577,6 +617,9 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
                   <WelcomeScreen.Center.MenuItem onSelect={() => openEquationEditor()} shortcut="M" icon={<span className="welcome-icon serif">∑</span>}>
                     משוואה — כמו ב-Word, או בקוד LaTeX
                   </WelcomeScreen.Center.MenuItem>
+                  <WelcomeScreen.Center.MenuItem onSelect={() => openParagraphEditor()} shortcut="Alt+T" icon={<span className="welcome-icon serif">¶</span>}>
+                    פסקה — הגדרה או משפט עם נוסחאות בתוך הטקסט
+                  </WelcomeScreen.Center.MenuItem>
                   <WelcomeScreen.Center.MenuItem onSelect={() => addGraph("graphing")} shortcut="Alt+G" icon={<span className="welcome-icon">📈</span>}>
                     גרף ומערכת צירים
                   </WelcomeScreen.Center.MenuItem>
@@ -608,6 +651,7 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
           <button className="icon-btn" onClick={() => switchToPage(pageIndex + 1)} disabled={pageIndex === pages.length - 1} title="עמוד הבא (PageDown)">◀</button>
           <span className="divider" />
           <button className="icon-btn" onClick={() => openEquationEditor()} title="משוואה (M)">∑</button>
+          <button className="icon-btn" onClick={() => openParagraphEditor()} title="פסקה (Alt+T)">¶</button>
           <button className="icon-btn" onClick={() => setProbDialog(true)} title="הסתברות (Alt+P)">🎲</button>
           <button className="icon-btn" onClick={activateHighlighter} title="מרקר (U)">🖍️</button>
           <button className="icon-btn" onClick={activateLaser} title="לייזר (K)">🔴</button>
@@ -623,6 +667,14 @@ export function BoardScreen({ boardId, onExit }: { boardId: string; onExit: () =
           initial={eqDialog.existing ? (getMathData(eqDialog.existing) ?? undefined) : undefined}
           onSubmit={onEquationSubmit}
           onCancel={() => setEqDialog(null)}
+        />
+      )}
+
+      {paraDialog && (
+        <ParagraphDialog
+          initial={paraDialog.existing ? (getParaData(paraDialog.existing) ?? undefined) : undefined}
+          onSubmit={onParagraphSubmit}
+          onCancel={() => setParaDialog(null)}
         />
       )}
     </div>
