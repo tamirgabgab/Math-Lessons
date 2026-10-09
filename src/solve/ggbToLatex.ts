@@ -20,6 +20,7 @@ const CONSTANTS: Record<string, string> = {
   "ℯ": "e",
   "∞": "\\infty",
   infinity: "\\infty",
+  Infinity: "\\infty",
   "ί": "i",
 };
 
@@ -68,8 +69,22 @@ function tokenize(s: string): Token[] {
   return out;
 }
 
-/** Marks a rendered inner list (one solution of a system) until the outer list decides how to show it. */
+/** Marks a rendered inner list (a matrix row or one solution of a system) until the outer list decides how to show it. */
 const INNER = "\u0001";
+/** Separates the items of an inner list inside the marker string. */
+const INNER_SEP = "\u0002";
+
+const HAS_RELATION = / (=|<|>|\\le|\\ge|\\ne) /;
+
+/** Decodes a list item: an inner list becomes its items. */
+function decodeItem(x: string): string | string[] {
+  return x.startsWith(INNER) ? x.slice(1).split(INNER_SEP) : x;
+}
+
+/** {{1, 2}, {3, 4}} → \begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix} */
+function matrixToLatex(rows: string[][]): string {
+  return `\\begin{pmatrix} ${rows.map((row) => row.join(" & ")).join(" \\\\ ")} \\end{pmatrix}`;
+}
 
 class Parser {
   i = 0;
@@ -200,21 +215,29 @@ class Parser {
   list(): string {
     this.i++;
     this.listDepth++;
-    const items: string[] = [];
+    const raw: string[] = [];
     if (!this.isOp("}")) {
-      items.push(this.relation());
+      raw.push(this.relation());
       while (this.isOp(",")) {
         this.i++;
-        items.push(this.relation());
+        raw.push(this.relation());
       }
     }
     this.expect("}");
     this.listDepth--;
-    if (this.listDepth > 0) return INNER + items.join(",\\; ");
+    const items = raw.map(decodeItem);
+    if (this.listDepth > 0) {
+      // deeper nesting is flattened into the row
+      return INNER + items.map((x) => (Array.isArray(x) ? x.join(",\\; ") : x)).join(INNER_SEP);
+    }
+    // a list of lists without relations is a matrix
+    if (items.length > 0 && items.every((x) => Array.isArray(x) && !x.some((cell) => HAS_RELATION.test(cell)))) {
+      return matrixToLatex(items as string[][]);
+    }
     // several solutions of a system: put each one in parentheses
     const many = items.length > 1;
     return items
-      .map((x) => (x.startsWith(INNER) ? (many ? `\\left(${x.slice(1)}\\right)` : x.slice(1)) : x))
+      .map((x) => (Array.isArray(x) ? (many ? `\\left(${x.join(",\\; ")}\\right)` : x.join(",\\; ")) : x))
       .join(",\\quad ");
   }
 }

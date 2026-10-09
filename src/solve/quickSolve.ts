@@ -1,24 +1,69 @@
 import { definitionParts, latexToGgb, LatexConvertError } from "./latexToGgb";
 import { ggbToLatex } from "./ggbToLatex";
 
-export type SolveOp = "solve" | "derivative" | "integral" | "limit" | "simplify" | "factor" | "expand";
+export type SolveOp =
+  | "solve"
+  | "derivative"
+  | "integral"
+  | "limit"
+  | "simplify"
+  | "factor"
+  | "expand"
+  | "det"
+  | "inverse"
+  | "rank"
+  | "rref"
+  | "eigenvalues"
+  | "eigenvectors"
+  | "transpose"
+  | "series"
+  | "taylor";
 
 export const SOLVE_OPS: { op: SolveOp; label: string; title: string }[] = [
   { op: "solve", label: "פתור", title: "פתרון משוואה, אי-שוויון או מערכת משוואות" },
   { op: "derivative", label: "גזור", title: "נגזרת" },
   { op: "integral", label: "∫ אינטגרל", title: "אינטגרל לא מסוים, או מסוים אם ממלאים גבולות" },
-  { op: "limit", label: "lim גבול", title: "גבול כשהמשתנה שואף לערך" },
+  { op: "limit", label: "lim גבול", title: "גבול כשהמשתנה שואף לערך (גם חד-צדדי)" },
   { op: "simplify", label: "פשט", title: "פישוט ביטוי" },
   { op: "factor", label: "פרק לגורמים", title: "פירוק לגורמים" },
   { op: "expand", label: "פתח סוגריים", title: "פתיחת סוגריים" },
+  { op: "det", label: "det דטרמיננטה", title: "דטרמיננטה של מטריצה" },
+  { op: "inverse", label: "M⁻¹ הופכית", title: "מטריצה הופכית" },
+  { op: "rank", label: "דרגה", title: "דרגת המטריצה" },
+  { op: "rref", label: "דירוג", title: "צורה מדורגת קנונית (RREF)" },
+  { op: "eigenvalues", label: "λ ערכים עצמיים", title: "ערכים עצמיים" },
+  { op: "eigenvectors", label: "וקטורים עצמיים", title: "וקטורים עצמיים (כעמודות של מטריצה)" },
+  { op: "transpose", label: "Mᵀ שחלוף", title: "מטריצה משוחלפת" },
+  { op: "series", label: "∑ טור", title: "סכום טור (סופי או אינסופי)" },
+  { op: "taylor", label: "טיילור", title: "פולינום טיילור סביב נקודה" },
+];
+
+/** Buttons by subject. A group with `when` is shown only when the editor content matches it. */
+export const SOLVE_GROUPS: { id: string; title: string; ops: SolveOp[]; when?: (latex: string) => boolean }[] = [
+  { id: "general", title: "כללי", ops: ["solve", "derivative", "integral", "limit", "simplify", "factor", "expand"] },
+  {
+    id: "linear",
+    title: "אלגברה לינארית",
+    ops: ["det", "inverse", "rank", "rref", "eigenvalues", "eigenvectors", "transpose"],
+    when: (latex) => /\\begin\{[pbv]?matrix\}|\\det/.test(latex),
+  },
+  { id: "series", title: "טורים וטיילור", ops: ["series", "taylor"] },
 ];
 
 export interface SolveOptions {
   /** Limit point, e.g. "0", "\infty", "-\infty". */
   limitTo?: string;
-  /** Definite integral bounds (both or neither). */
+  /** One-sided limit: from the right ("+") or from the left ("-"). */
+  side?: "+" | "-";
+  /** Definite integral bounds (both or neither); also the bounds of a series. */
   from?: string;
   to?: string;
+  /** Taylor: expansion point (default 0). */
+  point?: string;
+  /** Taylor: degree of the polynomial (default 3). */
+  degree?: string;
+  /** Series: summation variable (default: the first variable found). */
+  sumVar?: string;
 }
 
 export interface SolvePlan {
@@ -56,6 +101,10 @@ function boundToGgb(raw: string): string {
 
 const boundToLatex = (raw: string) =>
   raw.trim().replace(/∞|infinity|inf/gi, "\\infty").replace(/^\+/, "");
+
+/** A matrix literal / \det M … shown as the operand: a letter stays bare, anything else is wrapped. */
+const matrixOperand = (latex: string) =>
+  /^[a-zA-Z]$/.test(latex) || /^\\begin\{/.test(latex) ? latex : `\\left(${latex}\\right)`;
 
 /** Decides which CAS command(s) to run for a button press, and how to show the answer. */
 export function planSolve(op: SolveOp, latex: string, opts: SolveOptions = {}): SolvePlan {
@@ -113,10 +162,14 @@ export function planSolve(op: SolveOp, latex: string, opts: SolveOptions = {}): 
       };
     }
     case "limit": {
+      // the editor already holds "\lim_{x \to a} …": evaluate it as is
+      if (/^Limit(Above|Below)?\(/.test(e)) return { commands: [e], present: (r) => `${exprLatex} = ${r}`, variable: v };
       const to = boundToGgb(opts.limitTo ?? "");
+      const fn = opts.side === "+" ? "LimitAbove" : opts.side === "-" ? "LimitBelow" : "Limit";
+      const sideLatex = opts.side ? `^{${opts.side}}` : "";
       return {
-        commands: [`Limit(${e}, ${v}, ${to})`],
-        present: (r) => `\\lim_{${v} \\to ${boundToLatex(opts.limitTo!)}} ${exprLatex} = ${r}`,
+        commands: [`${fn}(${e}, ${v}, ${to})`],
+        present: (r) => `\\lim_{${v} \\to ${boundToLatex(opts.limitTo!)}${sideLatex}} ${exprLatex} = ${r}`,
         variable: v,
       };
     }
@@ -126,6 +179,57 @@ export function planSolve(op: SolveOp, latex: string, opts: SolveOptions = {}): 
       return { commands: [`Factor(${e})`], present: (r) => `${exprLatex} = ${r}`, variable: v };
     case "expand":
       return { commands: [`Expand(${e})`], present: (r) => `${exprLatex} = ${r}`, variable: v };
+    case "det": {
+      // \det M / a vmatrix already converted to Determinant(…)
+      const already = e.startsWith("Determinant(");
+      return {
+        commands: [already ? e : `Determinant(${e})`],
+        present: (r) => (already ? `${exprLatex} = ${r}` : `\\det ${matrixOperand(exprLatex)} = ${r}`),
+        variable: v,
+      };
+    }
+    case "inverse":
+      return { commands: [`Invert(${e})`], present: (r) => `${matrixOperand(exprLatex)}^{-1} = ${r}`, variable: v };
+    case "rank":
+      return {
+        commands: [`MatrixRank(${e})`],
+        present: (r) => `\\operatorname{rank} ${matrixOperand(exprLatex)} = ${r}`,
+        variable: v,
+      };
+    case "rref":
+      return { commands: [`ReducedRowEchelonForm(${e})`], present: (r) => `${exprLatex} \\sim ${r}`, variable: v };
+    case "eigenvalues":
+      return { commands: [`Eigenvalues(${e})`], present: (r) => `\\lambda = ${r}`, variable: v };
+    case "eigenvectors":
+      return { commands: [`Eigenvectors(${e})`], present: (r) => `v = ${r}`, variable: v };
+    case "transpose":
+      return { commands: [`Transpose(${e})`], present: (r) => `${matrixOperand(exprLatex)}^{T} = ${r}`, variable: v };
+    case "taylor": {
+      const pointRaw = opts.point?.trim() || "0";
+      const degree = (opts.degree ?? "").trim() || "3";
+      if (!/^[0-9]+$/.test(degree)) throw new LatexConvertError("הדרגה צריכה להיות מספר שלם");
+      const point = boundToGgb(pointRaw);
+      return {
+        commands: [`TaylorPolynomial(${e}, ${v}, ${point}, ${degree})`],
+        present: (r) => `T_{${degree}}(${v}) = ${r}`,
+        variable: v,
+      };
+    }
+    case "series": {
+      // the editor already holds "\sum_{k=a}^{b} …": sum it, then approximate numerically if needed
+      if (/^(Sum|Product)\(/.test(e)) {
+        return { commands: [e, `Numeric(${e})`], present: (r) => `${exprLatex} = ${r}`, variable: v };
+      }
+      const k = (opts.sumVar ?? "").trim() || v;
+      const a = boundToGgb(opts.from ?? "");
+      const b = boundToGgb(opts.to ?? "");
+      const cmd = `Sum(${e}, ${k}, ${a}, ${b})`;
+      return {
+        commands: [cmd, `Numeric(${cmd})`],
+        present: (r) => `\\sum_{${k}=${boundToLatex(opts.from!)}}^{${boundToLatex(opts.to!)}} ${integrand(exprLatex)} = ${r}`,
+        variable: k,
+      };
+    }
   }
 }
 

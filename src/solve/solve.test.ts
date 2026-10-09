@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { definitionParts, findVariables, latexToGgb } from "./latexToGgb";
 import { ggbToLatex } from "./ggbToLatex";
-import { planSolve, runPlan } from "./quickSolve";
+import { planSolve, runPlan, SOLVE_GROUPS } from "./quickSolve";
 
 describe("latexToGgb", () => {
   const g = (latex: string) => latexToGgb(latex).ggb;
@@ -41,9 +41,44 @@ describe("latexToGgb", () => {
     expect(() => g("\\mathbb{R}")).toThrow(/לא נתמך/);
   });
 
+  it("converts matrices and determinants", () => {
+    expect(g(String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}`)).toBe("{{1,2},{3,4}}");
+    expect(g(String.raw`\begin{bmatrix} 1 & -2 \\ \frac{1}{2} & 0 \\ \end{bmatrix}`)).toBe("{{1,-2},{((1)/(2)),0}}");
+    expect(g(String.raw`\begin{vmatrix}1&2\\3&4\end{vmatrix}`)).toBe("Determinant({{1,2},{3,4}})");
+    expect(g(String.raw`\det\begin{pmatrix}1&2\\3&4\end{pmatrix}`)).toBe("Determinant({{1,2},{3,4}})");
+    expect(g(String.raw`\det\left(\begin{pmatrix}1&2\\3&4\end{pmatrix}\right)`)).toBe("Determinant({{1,2},{3,4}})");
+    expect(g(String.raw`\det A`)).toBe("Determinant(A)");
+    expect(g(String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}^{T}`)).toBe("Transpose({{1,2},{3,4}})");
+    expect(g(String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}^{-1}`)).toBe("Invert({{1,2},{3,4}})");
+    expect(g(String.raw`A^{T}`)).toBe("A^(T)");
+    expect(g(String.raw`x_{a_{b}}^{-1}`)).toBe("x_{a_{b}}^(-1)");
+    expect(() => g(String.raw`\begin{pmatrix}1&2`)).toThrow(/חסר/);
+  });
+
+  it("converts sums, products, binomials and limits", () => {
+    expect(g(String.raw`\sum_{k=1}^{n} k^2`)).toBe("Sum(k^(2),k,1,n)");
+    expect(g(String.raw`\sum^{n}_{k=1} k + 5`)).toBe("Sum(k+5,k,1,n)");
+    expect(g(String.raw`\sum\limits_{k=1}^{\infty}\frac{1}{k^2}`)).toBe("Sum(((1)/(k^(2))),k,1,infinity)");
+    expect(g(String.raw`\sum_{k=1}^{\infty}\frac{1}{k^2}`)).toBe("Sum(((1)/(k^(2))),k,1,infinity)");
+    expect(g(String.raw`\prod_{i=1}^{n} i`)).toBe("Product(i,i,1,n)");
+    expect(g(String.raw`\left(\sum_{k=1}^{n} k\right)^2`)).toBe("(Sum(k,k,1,n))^(2)");
+    expect(() => g(String.raw`\sum k`)).toThrow(/גבולות/);
+    expect(g(String.raw`\sum_{k=1}^{n} k = \frac{n(n+1)}{2}`)).toBe("Sum(k,k,1,n)=((n(n+1))/(2))");
+    expect(g(String.raw`\binom{5}{2}`)).toBe("nCr(5,2)");
+    expect(g(String.raw`\varepsilon+\epsilon`)).toBe("ε+ε");
+    expect(g(String.raw`\lim_{x\to 0^{+}}\frac{1}{x}`)).toBe("LimitAbove(((1)/(x)),x,0)");
+    expect(g(String.raw`\lim_{x\to 2^-} x`)).toBe("LimitBelow(x,x,2)");
+    expect(g(String.raw`\lim\limits_{n \to \infty} \frac{1}{n}`)).toBe("Limit(((1)/(n)),n,infinity)");
+    expect(g(String.raw`\lim_{x\rightarrow-\infty} x`)).toBe("Limit(x,x,-infinity)");
+    expect(() => g(String.raw`\lim x`)).toThrow(/שואף/);
+  });
+
   it("finds variables, x first, ignoring function names", () => {
     expect(findVariables("sin(t)+a*x")).toEqual(["x", "a", "t"]);
     expect(findVariables("sqrt(2)+pi")).toEqual([]);
+    expect(findVariables("Sum(k^(2),k,1,n)")).toEqual(["k", "n"]);
+    expect(findVariables("Determinant({{1,2},{3,4}})+nCr(5,2)")).toEqual([]);
+    expect(findVariables("LimitAbove(((1)/(x)),x,0)")).toEqual(["x"]);
   });
 
   it("splits definitions", () => {
@@ -82,6 +117,21 @@ describe("ggbToLatex (real GeoGebra outputs)", () => {
     );
     expect(l("(x + 1)^(1 / 2)")).toBe("\\left(x + 1\\right)^{\\frac{1}{2}}");
   });
+
+  it("matrices and lists", () => {
+    expect(l("{{1, 2}, {3, 4}}")).toBe(String.raw`\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}`);
+    expect(l("{{x = 2, y = -1}}")).toBe("x = 2,\\; y = -1");
+    expect(l("{{x = 1, y = 2}, {x = 3, y = 4}}")).toBe("\\left(x = 1,\\; y = 2\\right),\\quad \\left(x = 3,\\; y = 4\\right)");
+    expect(l("{2, 3}")).toBe("2,\\quad 3");
+    expect(l("{{1 / 2, 0}, {0, 1}}")).toBe(String.raw`\begin{pmatrix} \frac{1}{2} & 0 \\ 0 & 1 \end{pmatrix}`);
+    expect(l("{{-2, 1}, {3 / 2, -1 / 2}}")).toBe(String.raw`\begin{pmatrix} -2 & 1 \\ \frac{3}{2} & -\frac{1}{2} \end{pmatrix}`);
+    expect(l("{(5 - sqrt(33)) / 2, (5 + sqrt(33)) / 2}")).toBe(
+      String.raw`\frac{5 - \sqrt{33}}{2},\quad \frac{5 + \sqrt{33}}{2}`,
+    );
+    expect(l("π² / 6")).toBe("\\frac{\\pi^{2}}{6}");
+    expect(l("∞")).toBe("\\infty");
+    expect(l("1 + x + 1 / 2 x² + 1 / 6 x³")).toBe("1 + x + \\frac{x^{2}}{2} + \\frac{x^{3}}{6}");
+  });
 });
 
 describe("planSolve / runPlan", () => {
@@ -99,6 +149,21 @@ describe("planSolve / runPlan", () => {
     "Limit(((sin(x))/(x)), x, 0)": "1",
     "Integral(((1)/(x)), x)": "ln(abs(x)) + c_{1}",
     "Solve({x+y=1, x-y=3}, {x, y})": "{{x = 2, y = -1}}",
+    "Determinant({{1,2},{3,4}})": "-2",
+    "Invert({{1,2},{3,4}})": "{{-2, 1}, {3 / 2, -1 / 2}}",
+    "MatrixRank({{1,2},{3,4}})": "2",
+    "ReducedRowEchelonForm({{1,2},{3,4}})": "{{1, 0}, {0, 1}}",
+    "Eigenvalues({{2,0},{0,3}})": "{2, 3}",
+    "Eigenvectors({{2,0},{0,3}})": "{{1, 0}, {0, 1}}",
+    "Transpose({{1,2},{3,4}})": "{{1, 3}, {2, 4}}",
+    "TaylorPolynomial(ℯ^(x), x, 0, 3)": "1 + x + 1 / 2 x² + 1 / 6 x³",
+    "Sum(((1)/(k^(2))),k,1,infinity)": "π² / 6",
+    "Sum(k^(2), k, 1, n)": "1 / 3 n³ + 1 / 2 n² + 1 / 6 n",
+    "Sum(((1)/(k^(3))),k,1,infinity)": "?",
+    "Numeric(Sum(((1)/(k^(3))),k,1,infinity))": "1.202056903159",
+    "LimitAbove(((1)/(x)), x, 0)": "∞",
+    "LimitBelow(((1)/(x)), x, 0)": "-∞",
+    "LimitAbove(((1)/(x)),x,0)": "∞",
   };
   const cas = (cmd: string) => answers[cmd] ?? "?";
   const run = (...args: Parameters<typeof planSolve>) => runPlan(planSolve(...args), cas, args[0]);
@@ -136,5 +201,59 @@ describe("planSolve / runPlan", () => {
 
   it("limits", () => {
     expect(run("limit", "\\frac{\\sin x}{x}", { limitTo: "0" }).line).toBe("\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1");
+  });
+
+  it("one-sided limits, also when the editor already holds \\lim", () => {
+    expect(run("limit", String.raw`\frac{1}{x}`, { limitTo: "0", side: "+" }).line).toBe(
+      String.raw`\lim_{x \to 0^{+}} \frac{1}{x} = \infty`,
+    );
+    expect(run("limit", String.raw`\frac{1}{x}`, { limitTo: "0", side: "-" }).answer).toBe(String.raw`-\infty`);
+    expect(run("limit", String.raw`\lim_{x\to 0^{+}}\frac{1}{x}`).line).toBe(String.raw`\lim_{x\to 0^{+}}\frac{1}{x} = \infty`);
+  });
+
+  const M = String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}`;
+
+  it("linear algebra: det, inverse, rank, rref, eigen, transpose", () => {
+    expect(run("det", M).line).toBe(String.raw`\det ${M} = -2`);
+    expect(run("det", String.raw`\begin{vmatrix}1&2\\3&4\end{vmatrix}`).line).toBe(
+      String.raw`\begin{vmatrix}1&2\\3&4\end{vmatrix} = -2`,
+    );
+    expect(run("inverse", M).line).toBe(String.raw`${M}^{-1} = \begin{pmatrix} -2 & 1 \\ \frac{3}{2} & -\frac{1}{2} \end{pmatrix}`);
+    expect(run("rank", M).line).toBe(String.raw`\operatorname{rank} ${M} = 2`);
+    expect(run("rref", M).line).toBe(String.raw`${M} \sim \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}`);
+    expect(run("transpose", M).line).toBe(String.raw`${M}^{T} = \begin{pmatrix} 1 & 3 \\ 2 & 4 \end{pmatrix}`);
+    const D = String.raw`\begin{pmatrix}2&0\\0&3\end{pmatrix}`;
+    expect(run("eigenvalues", D).line).toBe(String.raw`\lambda = 2,\quad 3`);
+    expect(run("eigenvectors", D).line).toBe(String.raw`v = \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}`);
+  });
+
+  it("taylor polynomial", () => {
+    expect(run("taylor", "e^x", { point: "0", degree: "3" }).line).toBe(
+      String.raw`T_{3}(x) = 1 + x + \frac{x^{2}}{2} + \frac{x^{3}}{6}`,
+    );
+    expect(run("taylor", "f(x)=e^x").line).toBe(String.raw`T_{3}(x) = 1 + x + \frac{x^{2}}{2} + \frac{x^{3}}{6}`);
+    expect(() => run("taylor", "e^x", { degree: "n" })).toThrow(/שלם/);
+  });
+
+  it("series: from the editor's \\sum or from the parameter row", () => {
+    expect(run("series", String.raw`\sum_{k=1}^{\infty}\frac{1}{k^2}`).line).toBe(
+      String.raw`\sum_{k=1}^{\infty}\frac{1}{k^2} = \frac{\pi^{2}}{6}`,
+    );
+    expect(run("series", "k^2", { sumVar: "k", from: "1", to: "n" }).line).toBe(
+      String.raw`\sum_{k=1}^{n} k^2 = \frac{n^{3}}{3} + \frac{n^{2}}{2} + \frac{n}{6}`,
+    );
+    const approx = run("series", String.raw`\sum_{k=1}^{\infty}\frac{1}{k^3}`);
+    expect(approx.answer).toBe("1.202056903159");
+    expect(approx.note).toContain("מקורב");
+  });
+});
+
+describe("SOLVE_GROUPS", () => {
+  it("shows the linear-algebra group only for matrices", () => {
+    const linear = SOLVE_GROUPS.find((g) => g.id === "linear")!;
+    expect(linear.when!(String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}`)).toBe(true);
+    expect(linear.when!(String.raw`\det A`)).toBe(true);
+    expect(linear.when!("x^2-4")).toBe(false);
+    expect(SOLVE_GROUPS.filter((g) => !g.when).map((g) => g.id)).toEqual(["general", "series"]);
   });
 });

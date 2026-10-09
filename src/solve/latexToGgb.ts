@@ -20,6 +20,7 @@ const FUNCTIONS: Record<string, string> = {
   exp: "exp",
   // in Israeli schools "log" without a base means base 10
   log: "lg",
+  det: "Determinant",
 };
 
 const SYMBOLS: Record<string, string> = {
@@ -40,6 +41,8 @@ const SYMBOLS: Record<string, string> = {
   beta: "β",
   gamma: "γ",
   delta: "δ",
+  epsilon: "ε",
+  varepsilon: "ε",
   theta: "θ",
   lambda: "λ",
   mu: "μ",
@@ -49,7 +52,11 @@ const SYMBOLS: Record<string, string> = {
   omega: "ω",
 };
 
-const IGNORED = new Set(["left", "right", "displaystyle", "big", "Big", "bigg", "Bigg", ",", ":", ";", "!", " ", "quad", "qquad"]);
+const IGNORED = new Set([
+  "left", "right", "displaystyle", "big", "Big", "bigg", "Bigg", ",", ":", ";", "!", " ", "quad", "qquad", "limits", "nolimits",
+]);
+
+const MATRIX_ENVS = new Set(["pmatrix", "bmatrix", "vmatrix", "matrix", "Bmatrix", "Vmatrix", "smallmatrix"]);
 
 export class LatexConvertError extends Error {}
 
@@ -122,6 +129,18 @@ function convert(latex: string): string {
         const n = r.peek() === "[" ? r.balanced("[", "]") : null;
         const g = r.group();
         out += n ? `nroot(${convert(g)},${convert(n)})` : `sqrt(${convert(g)})`;
+      } else if (name === "begin") {
+        out += parseEnv(r);
+      } else if (name === "end") {
+        throw new LatexConvertError("‏\\end ללא \\begin תואם");
+      } else if (name === "sum" || name === "prod") {
+        out += convertBigOperator(name, r);
+      } else if (name === "binom" || name === "dbinom" || name === "tbinom") {
+        const n = r.group();
+        const k = r.group();
+        out += `nCr(${convert(n)},${convert(k)})`;
+      } else if (name === "lim") {
+        out += convertLimit(r);
       } else if (name in FUNCTIONS) {
         out += convertFunction(name, r);
       } else if (name === "operatorname" || name === "mathrm" || name === "text" || name === "mathit") {
@@ -150,7 +169,11 @@ function convert(latex: string): string {
       }
     } else if (c === "^") {
       r.i++;
-      out += `^(${convert(r.group())})`;
+      const exp = r.group().trim();
+      // transpose / inverse written as a power of a matrix literal
+      const matrixFn = exp === "T" || exp === "\\top" || exp === "\\mathsf{T}" ? "Transpose" : exp === "-1" ? "Invert" : null;
+      const wrapped = matrixFn ? wrapLastMatrix(out, matrixFn) : null;
+      out = wrapped ?? `${out}^(${convert(exp)})`;
     } else if (c === "_") {
       r.i++;
       out += `_{${convert(r.group())}}`;
@@ -178,6 +201,153 @@ function convert(latex: string): string {
   return out;
 }
 
+/**
+ * Wraps the matrix literal at the end of `out` in a GeoGebra command: "{{1,2},{3,4}}" → "Transpose({{1,2},{3,4}})".
+ * Returns null when `out` doesn't end with a matrix literal.
+ */
+function wrapLastMatrix(out: string, fn: string): string | null {
+  if (!out.endsWith("}}")) return null;
+  let depth = 0;
+  for (let i = out.length - 1; i >= 0; i--) {
+    const c = out[i];
+    if (c === "}") depth++;
+    else if (c === "{" && --depth === 0) {
+      // a matrix literal starts with "{{"; a subscript like "_{a_{b}}" doesn't
+      return out.startsWith("{{", i) ? `${out.slice(0, i)}${fn}(${out.slice(i)})` : null;
+    }
+  }
+  return null;
+}
+
+/** Splits a LaTeX string on a separator at brace depth 0 ("&" or "\\"). */
+function splitTopLevel(s: string, sep: "&" | "\\\\"): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\" && sep === "\\\\" && s[i + 1] === "\\" && depth === 0) {
+      parts.push(s.slice(start, i));
+      i++;
+      start = i + 1;
+      continue;
+    }
+    if (c === "\\") {
+      i++; // skip the escaped / command character
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (c === sep && depth === 0) {
+      parts.push(s.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(s.slice(start));
+  return parts;
+}
+
+/**
+ * "\begin{pmatrix} a & b \\ c & d \end{pmatrix}" → "{{a,b},{c,d}}". Assumes "\begin" was just consumed.
+ * A vmatrix (bars) is a determinant.
+ */
+function parseEnv(r: Reader): string {
+  const env = r.group().trim();
+  if (!MATRIX_ENVS.has(env)) throw new LatexConvertError(`הסביבה ${env} לא נתמכת כאן בפתרון המהיר`);
+  const endTag = `\\end{${env}}`;
+  const end = r.s.indexOf(endTag, r.i);
+  if (end < 0) throw new LatexConvertError(`חסר \\end{${env}}`);
+  const body = r.s.slice(r.i, end);
+  r.i = end + endTag.length;
+  const rows = splitTopLevel(body, "\\\\")
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => `{${splitTopLevel(row, "&").map((cell) => convert(cell.trim()) || "0").join(",")}}`);
+  if (rows.length === 0) throw new LatexConvertError("המטריצה ריקה");
+  const literal = `{${rows.join(",")}}`;
+  return env === "vmatrix" || env === "Vmatrix" ? `Determinant(${literal})` : literal;
+}
+
+/** Reads "_{…}" / "^{…}" (in either order) after a big operator, skipping \limits. */
+function readScripts(r: Reader): { sub: string | null; sup: string | null } {
+  let sub: string | null = null;
+  let sup: string | null = null;
+  for (let k = 0; k < 3; k++) {
+    r.skipSpaces();
+    if (r.s.startsWith("\\limits", r.i) || r.s.startsWith("\\nolimits", r.i)) {
+      r.command();
+      continue;
+    }
+    if (r.peek() === "_" && sub === null) {
+      r.i++;
+      sub = r.group();
+    } else if (r.peek() === "^" && sup === null) {
+      r.i++;
+      sup = r.group();
+    } else break;
+  }
+  return { sub, sup };
+}
+
+const RELATION_COMMANDS = new Set(["le", "leq", "ge", "geq", "ne", "neq", "lt", "gt"]);
+
+/**
+ * The operand of a big operator is everything that follows, like TeX's "\sum_{k=1}^{n} k + 5",
+ * up to an unbalanced closing bracket / \right or a relation sign at the top level.
+ */
+function restOf(r: Reader): string {
+  const s = r.s;
+  let depth = 0;
+  let i = r.i;
+  for (; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\") {
+      const name = /^\\([a-zA-Z]+|.)/.exec(s.slice(i))?.[1] ?? "";
+      if (depth === 0 && (name === "right" || RELATION_COMMANDS.has(name))) break;
+      i += name.length;
+    } else if ("([{".includes(c)) {
+      depth++;
+    } else if (")]}".includes(c)) {
+      if (depth === 0) break;
+      depth--;
+    } else if (depth === 0 && "=<>".includes(c)) {
+      break;
+    }
+  }
+  const rest = s.slice(r.i, i);
+  r.i = i;
+  return rest;
+}
+
+/** "\sum_{k=1}^{n} k^2" → "Sum(k^(2),k,1,n)", "\prod…" → "Product(…)". */
+function convertBigOperator(name: "sum" | "prod", r: Reader): string {
+  const fn = name === "sum" ? "Sum" : "Product";
+  const { sub, sup } = readScripts(r);
+  const eq = sub ? /^([^=]+)=([\s\S]+)$/.exec(sub.trim()) : null;
+  if (!eq || sup === null) throw new LatexConvertError(`חסרים גבולות ל-\\${name} (למשל \\${name}_{k=1}^{n})`);
+  const body = convert(restOf(r).trim());
+  if (!body) throw new LatexConvertError(`חסר ביטוי אחרי \\${name}`);
+  return `${fn}(${body},${convert(eq[1].trim())},${convert(eq[2].trim())},${convert(sup.trim())})`;
+}
+
+/** "\lim_{x \to 0^{+}} \frac{1}{x}" → "LimitAbove(((1)/(x)),x,0)". */
+function convertLimit(r: Reader): string {
+  const { sub } = readScripts(r);
+  const m = sub ? /^([\s\S]*?)\\(?:to|rightarrow|longrightarrow)([\s\S]+)$/.exec(sub.trim()) : null;
+  if (!m) throw new LatexConvertError("חסר לאן המשתנה שואף (למשל \\lim_{x\\to 0})");
+  const variable = convert(m[1].trim());
+  let point = m[2].trim();
+  let fn = "Limit";
+  const side = /\^\{?\s*([+-])\s*\}?$/.exec(point);
+  if (side) {
+    fn = side[1] === "+" ? "LimitAbove" : "LimitBelow";
+    point = point.slice(0, side.index).trim();
+  }
+  const body = convert(restOf(r).trim());
+  if (!body) throw new LatexConvertError("חסר ביטוי אחרי \\lim");
+  return `${fn}(${body},${variable},${convert(point)})`;
+}
+
 /** "\sin^2 x", "\sin(x)", "\log_2 8", "\ln x" … */
 function convertFunction(name: string, r: Reader): string {
   let fn = FUNCTIONS[name];
@@ -197,6 +367,10 @@ function convertFunction(name: string, r: Reader): string {
   let arg: string;
   if (r.peek() === "(") {
     arg = convert(r.balanced("(", ")"));
+  } else if (r.s.startsWith("\\begin", r.i)) {
+    // \det\begin{pmatrix}…\end{pmatrix}
+    r.command();
+    arg = parseEnv(r);
   } else if (r.s.startsWith("\\left(", r.i)) {
     r.i += "\\left".length;
     const inner = r.balanced("(", ")");
@@ -228,7 +402,8 @@ export interface ParsedInput {
   variables: string[];
 }
 
-const NOT_VARIABLES = /\b(sqrt|nroot|sin|cos|tan|cot|sec|csc|asin|acos|atan|sinh|cosh|tanh|ln|lg|log|exp|abs|pi|infinity)\b/g;
+const NOT_VARIABLES =
+  /\b(sqrt|nroot|sin|cos|tan|cot|sec|csc|asin|acos|atan|sinh|cosh|tanh|ln|lg|log|exp|abs|pi|infinity|Determinant|Transpose|Invert|Sum|Product|nCr|Limit|LimitAbove|LimitBelow)\b/g;
 
 export function findVariables(ggb: string): string[] {
   const cleaned = ggb.replace(NOT_VARIABLES, " ");
