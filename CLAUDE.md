@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Hebrew (RTL) whiteboard for private math/physics/probability tutoring. The teacher uses it alone (mouse + keyboard) and screen-shares it over Zoom. Lessons are notebooks of pages that combine Excalidraw drawing, LaTeX equations, GeoGebra/Desmos graphs, probability diagrams, and a "quick solve" that uses GeoGebra's CAS. It is a static site with no backend: all data lives in the browser's IndexedDB. The owner knows only Python, so UI text and the README are in Hebrew.
+A Hebrew (RTL) whiteboard for private math/physics/probability tutoring. The teacher uses it alone (mouse + keyboard) and screen-shares it over Zoom. Lessons are notebooks of pages that combine Excalidraw drawing, LaTeX equations, Hebrew "paragraphs" with inline math, Desmos graphs, probability diagrams, a library of definitions/theorems (Linear Algebra 1+2, Calculus 1) and a "quick solve" that uses GeoGebra's CAS. It is a static site with no backend: all data lives in the browser's IndexedDB. The owner knows only Python, so UI text and the README are in Hebrew.
 
 ## Commands
 
@@ -21,7 +21,8 @@ npm run deploy         # npx vercel --prod (needs an interactive Vercel login by
 - `predev`/`prebuild` run `scripts/copy-assets.mjs`, which copies the MathLive and Excalidraw fonts from `node_modules` into `public/` (gitignored). The app needs them to work offline.
 - `start.bat` is the double-click launcher for the owner.
 - The port is fixed at 5173 on purpose. IndexedDB is per origin, including the port, so a different port means the lessons seem to "disappear".
-- Unit tests run in Node. Anything that imports `@excalidraw/excalidraw` at runtime fails under Vitest (JSON import error), so pure logic is kept in separate modules: `probability/{tree,venn,table,fraction,shapes}.ts`, `solve/{latexToGgb,ggbToLatex,quickSolve}.ts`, `export/{pdfLayout,png}.ts`. `storage/db.test.ts` uses `fake-indexeddb`.
+- Unit tests run in Node. Anything that imports `@excalidraw/excalidraw` at runtime fails under Vitest (JSON import error), so pure logic is kept in separate modules: `probability/{tree,venn,table,fraction,shapes}.ts`, `solve/{latexToGgb,ggbToLatex,quickSolve}.ts`, `export/{pdfLayout,png}.ts`, `para/{parse,slashInsert,slashCommands}.ts`, `library/content/*`. `storage/db.test.ts` uses `fake-indexeddb`.
+- Browser checks: Playwright with the preinstalled Chromium (`executablePath: /opt/pw-browsers/chromium`) against `npm run dev`. Desmos is blocked in the cloud container, so `page.route` the `calculator.js` URL to a fake with `setState/getState/setExpression/observeEvent/screenshot` to exercise focus mode.
 
 ## Architecture
 
@@ -43,13 +44,20 @@ Templates are boards with `isTemplate: true`. Backup and restore is a JSON dump 
 **Custom element types** are plain Excalidraw elements, marked by `customData`:
 - **Equations** (`math/`) are `image` elements with `customData.kind === "math"`, an SVG rendered from LaTeX by MathJax (`latexToSvg.ts`).
   - They are edited in `EquationDialog`, which syncs a MathLive visual field with a raw-LaTeX textarea.
-  - Double-click and Enter on an equation are intercepted in the capture phase, because Excalidraw would otherwise start image cropping.
-  - A new equation is placed under the currently selected element ("next line").
-- **Graphs** (`graph/graphs.tsx`) are `embeddable` elements with `customData.kind === "ggb"`. The `engine` field is `geogebra` or `desmos` (missing means GeoGebra) and `app` is `graphing` or `3d`.
-  - `renderEmbeddable` returns a same-origin iframe: `public/ggb.html` or `public/desmos.html`.
-  - The iframe pages talk to the board through `window.mlGgbBridge` (`getInitial` / `onChange`). They save the engine state (`base64` for GeoGebra, `state` JSON for Desmos) plus a PNG `snapshot`.
+  - Double-click and Enter on an equation or paragraph are intercepted in the capture phase (`isEditableElement`), because Excalidraw would otherwise start image cropping. So is `?` (Excalidraw binds it to its own help dialog).
+  - A new equation is placed under the currently selected element ("next line"): `board/sceneUtils.placeNewItem` (left-aligned for equations, right-aligned for paragraphs).
+  - The palette is tabbed (`PALETTE_TABS`), MathLive gets extra `inlineShortcuts` (`eps`, `RR`, `det`, `pmat`, …) and the LaTeX box has the "/" menu.
+- **Paragraphs** (`para/`) are `image` elements with `customData.kind === "para"`: Hebrew text with `$…$` / `$$…$$` math, headings, lists and bold.
+  - `parse.ts` (pure, tested) turns the Markdown-like source into blocks; `renderParagraph.ts` builds HTML, measures it in a hidden container, and wraps it in an SVG `<foreignObject>` with MathJax SVG for the formulas (`latexToSvg(..., { inline: true })` returns the baseline offset). Chrome does not taint the canvas for such SVGs, so thumbnails and PDF export work like equations; `supportsForeignObject()` probes this once per session.
+  - Inside the foreignObject only system fonts and inline `<style>` are allowed (no external resources). The DOM is built with `createElementNS` and serialized with `XMLSerializer`, never by string concatenation.
+  - `ParagraphDialog` = textarea (`dir="rtl"`) + live preview rendered by the same function. `useSlashMenu` (`SlashMenu.tsx`) implements the "/" command menu over the pure helpers in `slashInsert.ts`; the commands are data in `slashCommands.ts`.
+- **Graphs** (`graph/graphs.tsx`) are `embeddable` elements with `customData.kind === "ggb"`. New graphs are always Desmos (`engine: "desmos"`); `engine` `geogebra` or missing means a legacy GeoGebra graph, which still renders through `public/ggb.html`. `app` is `graphing` or `3d`.
+  - `renderEmbeddable` returns a same-origin iframe: `public/ggb.html` or `public/desmos.html`. New graphs nearly fill the visible board.
+  - The iframe pages talk to the board through `window.mlGgbBridge` (`getInitial` / `onChange` / `closeFocus`). They save the engine state (`base64` for GeoGebra, `state` JSON for Desmos) plus a PNG `snapshot`.
   - State updates use `CaptureUpdateAction.NEVER`, so graph edits don't fill the board's undo history.
   - The snapshot is used for thumbnails and PDF export (`export/snapshots.ts` swaps graphs for images, keeping their proportions).
+  - **Focus mode** (`graph/GraphFocus.tsx`): a portal overlay (z-index 1500, under the modals) with a second `desmos.html?…&focus=1` iframe on the same element. Escape inside the iframe is forwarded through `bridge.closeFocus`. On close the overlay's `calculator.getState()` is written to the element and pushed into the board iframe with `pushDesmosState` (changing `customData` does not reload an iframe because its `src` is unchanged); if the iframe can't be reached, `customData.rev` is bumped, which changes the `src` and reloads it.
+- **Library** (`library/`): `content/{linear1,linear2,infi1}.ts` hold the built-in snippets (`builtin: true`, Hebrew paragraph sources or LaTeX); user snippets live in the Dexie `snippets` table (schema version 2) and are part of backups (file version 2). `content.test.ts` renders every formula of every snippet, so broken LaTeX fails the tests.
 - **Probability diagrams** (`probability/`): generators build Excalidraw *skeletons*. `materialize.ts` converts them, applies the text anchors from `customData.anchor`, groups the elements, and places them on the board.
 
 **Graph embed details.**
@@ -75,7 +83,10 @@ Templates are boards with `isTemplate: true`. Backup and restore is a JSON dump 
 
 ## Gotchas
 
-- GeoGebra and Desmos load from the internet. Drawing and equations work offline.
-- Desmos uses its public demo API key unless a key is stored in `localStorage["math-lessons:desmosApiKey"]` (set from the "⚙ Desmos" button). The Desmos UI has no Hebrew. `Calculator3D.asyncScreenshot` throws, so `desmos.html` falls back to `screenshot()`.
+- Desmos and the GeoGebra CAS load from the internet. Drawing, equations and paragraphs work offline.
+- `desmos.html` has the owner's Desmos API key built in (`DEFAULT_KEY`; the repo is public and Desmos keys are client-side anyway). A key stored in `localStorage["math-lessons:desmosApiKey"]` (set from the "⚙ Desmos" button) overrides it. `projectorMode` is on. The Desmos UI has no Hebrew. `Calculator3D.asyncScreenshot` throws, so `desmos.html` falls back to `screenshot()`.
+- Agent worktrees under `.claude/worktrees/` are excluded from vitest (`vite.config.ts`); otherwise every test runs twice.
+- Keyboard shortcuts live in `BoardScreen` (`onKey` in the bubble phase, `onEnterCapture` in the capture phase). All dialogs are listed in `dialogOpen` so shortcuts are off while one is open. `T` alone stays Excalidraw's text tool; paragraphs are `Alt+T`.
+- The quick-solve `\sum`/`\prod`/`\lim` conversion takes the *rest of the expression* as the operand (TeX semantics), stopping at an unbalanced bracket, `\right` or a top-level relation.
 - When generating files that contain LaTeX, don't pass it through Python or shell string literals. `\f`, `\r` and `\i` turn into control characters or warnings. Use the Edit/Write tools, or `String.raw` in TS.
 - `hi.txt` in the root belongs to the user. Leave it alone.

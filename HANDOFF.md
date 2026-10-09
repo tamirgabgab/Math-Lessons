@@ -1,6 +1,40 @@
 # ‏HANDOFF.md — תוכנית שדרוג ללוח השיעורים (אלגברה לינארית + חדו"א)
 
-> מסמך זה נכתב כדי שסשן חדש של Claude Code יוכל להמשיך בדיוק מכאן. **שום דבר מהתוכנית לא מומש עדיין.** המימוש מתחיל רק כשהבעלים אומר "תתחיל לממש".
+> מסמך זה נכתב כדי שסשן חדש של Claude Code יוכל להמשיך בדיוק מכאן. **עדכון: כל השלבים 0–5 מומשו** (ראו סעיף 0). שאר המסמך הוא התוכנית המקורית, שנשמרת כתיעוד של ההחלטות.
+
+---
+
+## 0. סטטוס המימוש (עודכן אחרי הביצוע)
+
+**ענף:** `claude/happy-curie-pakc6z` (נדחף ל-GitHub; המיזוג ל-`main` בידי הבעלים). כל שלב בקומיט נפרד:
+
+| שלב | קומיט | מה נעשה |
+|---|---|---|
+| 0 | `47e68b8` | `placeNewItem`/`nextLinePosition` ב-`sceneUtils`, `latexToSvg` עם `inline` ו-`verticalAlign` |
+| 1 | `d591162` | אלמנט פסקה (`src/para/`), תפריט סלאש בשני העורכים, פלטה בטאבים, `inlineShortcuts`, `Alt+T` |
+| 4 | `914a4ed` | פתרון מהיר: מטריצות, דטרמיננטה, הופכית, דירוג, RREF, ערכים/וקטורים עצמיים, שחלוף, טורים, טיילור, גבולות חד-צדדיים, `SOLVE_GROUPS` |
+| 2 | `75740be` | Desmos בלבד, גרף גדול, מצב מיקוד (`GraphFocus.tsx`), מפתח API של הבעלים, `projectorMode` |
+| 3 | `7c6edf6` + `d15cf44` | ספרייה: 81 קטעים מובנים (31/22/28), טבלת `snippets` (Dexie v2), גיבוי v2, `LibraryPanel`, `SaveSnippetDialog`, `Alt+L` |
+| 5 | `d15cf44` + קומיט התיעוד | `ShortcutsDialog` (`?`/F1), סרגל עליון רספונסיבי, README, CLAUDE.md, המסמך הזה |
+
+**אומת:** `npm test` (87 בדיקות), `npx tsc --noEmit`, `npm run build`, ובדיקות דפדפן עם Playwright (Chromium) על `npm run dev`: פסקה + משוואה מתחתיה, תפריט סלאש, ספרייה (הוספה, שמירת קטע, חיפוש, מחיקה), חלון קיצורים, ייצוא PDF. ה-probe ל-foreignObject (סעיף 7) **עבר** ב-Chromium, לכן ה-fallback לא מומש.
+
+**מה לא אומת בדפדפן אמיתי:** Desmos חסום ברשת של הקונטיינר. מצב המיקוד נבדק עם סקריפט Desmos מזויף (אותו API: `setState/getState/setExpression/observeEvent/screenshot`) ועבד מקצה לקצה, כולל Esc מתוך ה-iframe, כתיבת המצב לאלמנט ו-snapshot. **הבעלים צריך לבדוק עם Desmos אמיתי:** גודל הגרף החדש, מצב מיקוד, `projectorMode` (אם מפריע, להוריד ב-`public/desmos.html`).
+
+**החלטות שהתקבלו תוך כדי (תשובות הבעלים):** רוחב ברירת מחדל לפסקה 640px; פסקאות בעברית בלבד (ימין לשמאל); מפתח Desmos בקוד (`DEFAULT_KEY`); קומיט ו-push בסוף כל שלב.
+
+**סטיות קטנות מהתוכנית:**
+- הפסקה: `isEdit` prop לעורכים (כותרת "עריכה" רק לאלמנט קיים; קטע מהספרייה נפתח כ"חדש").
+- `?` מיורט בשלב ה-capture כי Excalidraw פותח עליו את חלון העזרה שלו.
+- סכום/גבול "שאר המחרוזת" נעצר בסוגר לא מאוזן, ב-`\right` או ביחס ברמה העליונה (אחרת `(\sum ...)^2` נשבר).
+- התוכן המובנה גדול מהמתוכנן (81 במקום ~45); קל לקצץ ב-`src/library/content/`.
+
+**פתוח / רעיונות להמשך:**
+- לעבור על התוכן העברי בספרייה (מוסכמות: מכפלה פנימית לינארית ברכיב הראשון; מעבר בסיס לפי `[v]_{B'} = P[v]_B`).
+- פלטי CAS אמיתיים ל-`Eigenvectors`/`RREF` עם שורשים ומרוכבים לא נאספו כ-fixtures (סעיף 7).
+- ה-bundle הראשי גדול (~4 MB); Excalidraw מושך Mermaid/Cytoscape. פיצול לטעינה עצלה ישפר את הטעינה הראשונה.
+- אין CI; `npm test` + `tsc` ב-GitHub Actions יהיו זולים.
+
 
 ---
 
@@ -36,7 +70,7 @@
 ‏3. **מיפוי הקוד** (סוכן חקירה) ו**תכנון** (סוכן תכנון) של השדרוג, עם 8 שאלות הבהרה לבעלים (תשובותיו בסעיף 3).
 ‏4. **כתיבת המסמך הזה.** לא שונה שום קובץ קוד.
 
-**סטטוס git:** ענף `main`, עץ נקי חוץ מ-`HANDOFF.md` (הקובץ הזה). `hi.txt` מוחרג מקומית.
+**סטטוס git (בזמן כתיבת התוכנית):** ענף `main`, עץ נקי חוץ מ-`HANDOFF.md` (הקובץ הזה). `hi.txt` מוחרג מקומית. **עכשיו:** ראו סעיף 0.
 
 ---
 
@@ -128,13 +162,13 @@
 ‏3. להריץ `npm test` ו-`npx tsc --noEmit -p .` כבסיס ירוק.
 ‏4. להתחיל ב-**שלב 0** ואז **שלב 1**; לעשות קומיט בסוף כל שלב (רק אם הבעלים אישר קומיטים).
 
-### שלב 0 — תשתית משותפת (קטן, פותח את כל השאר)
+### שלב 0 — תשתית משותפת (קטן, פותח את כל השאר) ✅ בוצע
 - ‏`src/board/sceneUtils.ts`: להוסיף `nextLinePosition(api, width, height, opts?: {align?: "left"|"right"; gap?: number})` ו-`placeNewItem(api, width, height, opts?) → {x, y}` (שורה הבאה אם נבחר אלמנט אחד שאינו embeddable והמקום לא מתחת לגרף, אחרת `placementCenter`). להעביר את הלוגיקה מ-`insertEquation.ts:51-63`.
 - ‏`src/math/insertEquation.ts`: למחוק את `nextLinePosition` המקומית ולהשתמש ב-`placeNewItem` (משוואות עם `align:"left"` כמו היום).
 - ‏`src/math/latexToSvg.ts`: אופציה `inline?: boolean` (משתמשת ב-`display:false`) והחזרת `verticalAlign` (ה-`vertical-align:-0.57ex` ש-MathJax פולט ונמחק היום בשורה ~50; להשאיר את המחיקה במצב display).
 - **בדיקה:** `npm test`, `tsc`, בדפדפן: שתי משוואות ברצף עדיין נכנסות אחת מתחת לשנייה.
 
-### שלב 1 — אלמנט פסקה + תפריט סלאש + שדרוג עורך המשוואות (עדיפות 1)
+### שלב 1 — אלמנט פסקה + תפריט סלאש + שדרוג עורך המשוואות (עדיפות 1) ✅ בוצע
 
 **קבצים חדשים:**
 - ‏`src/para/parse.ts` (טהור, נבדק ב-node):
@@ -201,7 +235,7 @@
 
 **בדיקה לשלב 1:** vitest ל-parse/slashInsert; בדפדפן: להכניס פסקה עברית עם `$\varepsilon$` inline ו-`$$\lim…$$`, לזום (חד), לערוך בדאבל-קליק וב-Enter, לשנות גודל ואז לערוך (הסקייל נשמר), התמונה הממוזערת בפאנל הדפים מתעדכנת, "⬇ PDF" מציג את הפסקה, "Save as image" של Excalidraw עובד; להריץ `supportsForeignObject()` פעם בקונסול.
 
-### שלב 2 — Desmos גדול + מצב מיקוד + הסרת GeoGebra מה-UI
+### שלב 2 — Desmos גדול + מצב מיקוד + הסרת GeoGebra מה-UI ✅ בוצע
 - ‏`public/desmos.html`: `DEMO_KEY` → `DEFAULT_KEY` עם המפתח של הבעלים (סעיף 3), localStorage override נשאר; `projectorMode: true`; מצב `focus=1` (בלי שינוי בגודל, זה רק סימון); האזנה ל-`keydown` Escape במצב focus → `window.parent.mlGgbBridge.closeFocus?.()`; `data-key` על ה-iframe.
 - ‏`src/graph/graphs.tsx`: `preferredEngine()` מחזיר תמיד `"desmos"` (למחוק `rememberEngine`/`ENGINE_KEY`); `insertGraph(api, app, engine: GraphEngine = "desmos")`; גודל חדש: `width = (s.width - 40) / zoom * 0.92`, `height = (s.height - 40) / zoom * 0.88` (בלי תקרת 900×640), עדיין דרך `placementCenter`; `DEFAULT_SCALE = 1` לגרפים חדשים (A−/A+ ללא שינוי; גרפים קיימים שומרים `uiScale`); כפתור "⛶ מסך מלא" בכותרת רק כש-`engine === "desmos"`, שקורא ל-setter ברמת המודול `onFocusRequest` (אותו דפוס כמו `apiGetter`); `pushDesmosState(key, state)` מוצא `iframe.graph-frame[data-key=<id>]` וקורא `contentWindow.calculator.setState(state)` (זה מפעיל `change` → `scheduleSave` → `onChange` עם snapshot טרי); fallback: `customData.rev = (rev??0)+1` ו-`&rev=` ב-`src`. להוסיף `closeFocus?: () => void` לגשר. לשמור `GraphEngine`, `ENGINE_LABEL`, `PAGES.geogebra`, `LINKS.geogebra`, `engineOf` (חסר → geogebra) ו-`validateEmbeddable` ללוחות ישנים.
 - ‏`src/graph/GraphFocus.tsx` (חדש): `createPortal` overlay (fixed, inset 0, z-index 1500: מעל Excalidraw, מתחת ל-`.modal-backdrop` 2000) עם כותרת ("חזרה ללוח · Esc") ו-iframe שני `/desmos.html?key=<id>&app=<app>&focus=1`. `getInitial(key)` כבר מחזיר את ה-`state` העדכני. בסגירה: `overlayFrame.contentWindow.calculator.getState()` סינכרוני, `bridge.onChange(key, JSON.stringify(state), null)`, unmount, ואז `pushDesmosState`. לסגור בהחלפת דף.
@@ -213,7 +247,7 @@
 - ‏`public/ggb.html`, `src/export/snapshots.ts`: ללא שינוי.
 - **בדיקה:** גרף חדש ממלא את התצוגה; פתיחת מיקוד, הוספת ביטוי, Esc → הגרף הפנימי מציג אותו, snapshot בתמונה הממוזערת וב-PDF מעודכן; לוח ישן עם גרף GeoGebra (או אלמנט עם `engine` חסר) עדיין מתרנדר; `Alt+G`/`Alt+3` יוצרים Desmos.
 
-### שלב 3 — ספריית סניפטים
+### שלב 3 — ספריית סניפטים ✅ בוצע
 - ‏`src/library/types.ts`:
   ```ts
   export type SnippetTopic = "linear1" | "linear2" | "infi1";
@@ -233,7 +267,7 @@
 - ‏`src/board/BoardScreen.tsx`: כפתור "📚 ספרייה", `Alt+L`, "☆ שמור כקטע"; `src/home/HomeScreen.tsx`: הודעת השחזור סופרת סניפטים; `app.css`.
 - **בדיקה:** vitest db + content; בדפדפן: הכנסת סניפט מתחת למשוואה נבחרת (שורה הבאה), שמירת פסקה כסניפט, גיבוי → שחזור → הסניפט קיים.
 
-### שלב 4 — הרחבת הפתרון המהיר
+### שלב 4 — הרחבת הפתרון המהיר ✅ בוצע
 - ‏`src/solve/latexToGgb.ts` ב-`convert()`: ענף `name === "begin"` → `parseEnv(r)` קורא `{pmatrix|bmatrix|vmatrix|matrix}` עד `\end{…}`, מפצל שורות ב-`\\` ותאים ב-`&`, ממיר כל תא → `{{a,b},{c,d}}`; `vmatrix` עוטף ב-`Determinant(...)`. `det` → `Determinant(arg)` (להוסיף `det: "Determinant"` ל-`FUNCTIONS`, וב-`convertFunction` לקבל ארגומנט שמתחיל ב-`\begin`). `sum`/`prod` → לקרוא `_{k=a}` ו-`^{b}` בכל סדר, ואז הסכום הוא שאר המחרוזת (`r.s.slice(r.i)`, `r.i` לסוף) → `Sum(expr,k,a,b)` / `Product(...)`. `binom{n}{k}` → `nCr(n,k)`. `lim` → לקרוא `_{v \to a^{+}}` → `Limit|LimitAbove|LimitBelow(rest, v, a)`. SYMBOLS: `epsilon`, `varepsilon` → `ε`; IGNORED: להוסיף `limits`, `nolimits`. `^{T}` / `^{-1}` מיד אחרי ליטרל מטריצה → `Transpose({{…}})` / `Invert({{…}})` (עוזר `wrapLastMatrix(out, fn)`; לדלג אם `out` לא מסתיים ב-`}}`). `findVariables`: להרחיב `NOT_VARIABLES` בשמות הפקודות החדשות.
 - ‏`src/solve/quickSolve.ts`: `SolveOp` += `"det" | "inverse" | "rank" | "rref" | "eigenvalues" | "eigenvectors" | "transpose" | "series" | "taylor"`; `SolveOptions` += `{ side?: "+" | "-"; point?: string; degree?: string; sumVar?: string }`; מקרי `planSolve`: `Determinant(e)` → `\det M = r`; `Invert(e)` → `M^{-1} = r`; `MatrixRank(e)` → `\operatorname{rank} M = r`; `ReducedRowEchelonForm(e)` → `M \sim r`; `Eigenvalues(e)` → `\lambda = r`; `Eigenvectors(e)` → `v = r`; `Transpose(e)` → `M^{T} = r`; `taylor` → `TaylorPolynomial(e, v, point, degree)` → `T_{n}(x) = r`; `series` → אם `e` כבר `Sum(...)` להשתמש ב-`[e, "Numeric(" + e + ")"]`, אחרת `Sum(e, v, from, to)`; `limit` עם `side` → `LimitAbove/LimitBelow` ותצוגה `\lim_{x \to a^{+}}`. לייצא `SOLVE_GROUPS: { id, title, ops, when?: (latex) => boolean }[]` ("כללי", "אלגברה לינארית" כש-`/\\begin\{[pbv]?matrix\}|\\det/`, "טורים וטיילור" תמיד).
 - ‏`src/solve/ggbToLatex.ts` ב-`list()`: לאסוף פריטים כ-`(string | string[])[]`; אם כל פריט הוא רשימה פנימית ואין יחס בתוכה → `\begin{pmatrix} a & b \\ c & d \end{pmatrix}`; אחרת פלט פתרון-מערכת כמו היום. רשימות שטוחות נשארות `a,\quad b`.
@@ -241,7 +275,7 @@
 - ‏`src/solve/solve.test.ts` להוסיף: `\begin{pmatrix}1&2\\3&4\end{pmatrix}` = `{{1,2},{3,4}}`; vmatrix → `Determinant({{…}})`; `\det\begin{pmatrix}…`; `\sum_{k=1}^{n} k^2` = `Sum(k^(2),k,1,n)`; `\sum_{k=1}^{\infty}\frac{1}{k^2}` = `Sum(((1)/(k^(2))),k,1,infinity)`; `\binom{5}{2}` = `nCr(5,2)`; `\varepsilon` → `ε`; `\lim_{x\to 0^{+}}\frac{1}{x}` = `LimitAbove(((1)/(x)),x,0)`. `ggbToLatex`: `{{1, 2}, {3, 4}}` → pmatrix; `{{x = 2, y = -1}}` ללא שינוי; `{2, 3}` → `2,\quad 3`; `{{1 / 2, 0}, {0, 1}}` → שברים בתאים. `planSolve/runPlan` עם ה-CAS המזויף: det, inverse, rank, rref, eigenvalues, taylor (`TaylorPolynomial(ℯ^(x), x, 0, 3)` → `1 + x + 1 / 2 x² + 1 / 6 x³`), series, גבול חד-צדדי.
 - **בדיקה:** vitest; בדפדפן עם ה-CAS האמיתי: `\begin{pmatrix}1&2\\3&4\end{pmatrix}` → det/inverse/rank/RREF/eigen; `\sum_{k=1}^{\infty}\frac{1}{k^2}` → `\frac{\pi^{2}}{6}`; טיילור של `e^x` ב-0 דרגה 3; `\frac{1}{x}` עם `0⁺` → `\infty`. לרשום פלטי CAS אמיתיים שהפרסר דוחה ולהוסיף כ-fixtures.
 
-### שלב 5 — ליטוש
+### שלב 5 — ליטוש ✅ בוצע
 - ‏`src/board/ShortcutsDialog.tsx` (`?` / `F1`): טבלת כל הקיצורים כולל אלה של Excalidraw.
 - ארגון ה-topbar בקבוצות: הוספה (משוואה · פסקה · גרף ▾ · ספרייה · הסתברות) | ציור (עט · מרקר · לייזר) | הקשר (ערוך · שמור כקטע). התאמה בסרגל המצגת.
 - ‏`README.md` טבלת קיצורים; `CLAUDE.md` עדכון ארכיטקטורה (פסקאות, ספרייה, מיקוד, Desmos-only).
